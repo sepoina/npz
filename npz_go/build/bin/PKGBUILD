@@ -1,0 +1,109 @@
+# Maintainer: npz <npz@localhost>
+#
+# PKGBUILD di npz, per Arch e derivate (Manjaro compresa).
+#
+# ── questo file non contiene metadati ────────────────────────────────────────
+#
+# Versione, descrizione, manutentore e dipendenze stanno in `progetto.conf`,
+# nella radice del progetto — accanto a `npz_go/` e non dentro, perche' lo
+# condivide con l'implementazione Python — e sono scritti **in un posto solo**
+# in tutto il progetto. Qui si legge quel file e basta: non c'e' nessun valore
+# da tenere allineato a mano, quindi non ce n'e' nessuno che possa andare fuori
+# sincrono.
+#
+# ── e su AUR? ────────────────────────────────────────────────────────────────
+#
+# Su AUR un PKGBUILD deve bastare a se stesso, e `progetto.conf` non ci sarebbe.
+# La versione da pubblicare la **genera** `build/bin/pacchetto.sh arch`, che
+# scrive `dist/PKGBUILD-aur` con i valori gia' sostituiti alla lettera.
+#
+# Generare invece di duplicare e' la ragione per cui questo file non ha
+# ricadute scritte a mano. Ci sono state, per un giro: valori dopo i due punti
+# in `${VAR:-...}`, che servivano solo su AUR e quindi localmente non si
+# esercitavano mai — cioe' nessuno si sarebbe accorto quando fossero
+# invecchiati. Una copia che nessuno usa e' una copia che nessuno controlla.
+#
+# ── costruirlo ───────────────────────────────────────────────────────────────
+#
+#     build/bin/pacchetto.sh arch
+#
+# A mano, in una cartella vuota: ci vogliono accanto `progetto.conf` e il
+# tarball dei sorgenti chiamato $pkgname-$pkgver.tar.gz.
+
+# Questo `progetto.conf` e' la **copia** che `pacchetto.sh arch` mette accanto al
+# PKGBUILD, non quello del modulo, e la differenza conta: nella copia la versione
+# e' quella con cui si sta effettivamente costruendo, gia' risolta — anche quando
+# arriva dall'ambiente (`VERSIONE=1.2.3 ./pacchetto.sh`).
+#
+# Non si legge dall'ambiente qui, e non e' una preferenza: makepkg rientra in
+# `fakeroot` per eseguire `package()`, e la' rilegge questo file **senza** le
+# variabili che gli erano state esportate. Una versione presa dall'ambiente
+# cambierebbe quindi a meta' del giro, e il sintomo — `cd: npz-<altra versione>:
+# non esiste` dentro package() — non dice affatto quello che e' successo.
+. "$startdir/progetto.conf" || return 1
+
+# >>> metadati — vengono da progetto.conf, e `pacchetto.sh arch` li sostituisce
+# alla lettera quando genera la versione per AUR. Non scrivere valori qui.
+pkgname="$NOME"
+pkgver="$VERSIONE"
+pkgrel="$RILASCIO"
+pkgdesc="$DESCRIZIONE_BREVE"
+url="$URL"
+license=("$LICENZA")
+# Su Arch `erofsfuse` e' un pacchetto a se', separato da `erofs-utils`: la lista
+# in progetto.conf e' stata letta con `pacman -Qo`, non ricordata.
+# shellcheck disable=SC2206
+depends=($DIP_ARCH)
+# npm non e' obbligatorio: su questa macchina non appartiene ad alcun pacchetto
+# di sistema, perche' installato via nvm/fnm/volta. Vedi progetto.conf.
+optdepends=("${OPZIONALI_ARCH[@]}")
+# <<< metadati
+
+arch=('x86_64' 'aarch64')
+makedepends=('go')
+provides=("$pkgname")
+conflicts=("$pkgname-bin" "$pkgname-git")
+options=('!debug')
+
+source=("$pkgname-$pkgver.tar.gz")
+sha256sums=('SKIP')
+
+build() {
+    # Il tarball dei sorgenti ha la geometria del repo: `progetto.conf` in cima
+    # e il modulo Go in `npz_go/`. Si scende li', che e' dove sta il `go.mod`.
+    cd "$pkgname-$pkgver/npz_go"
+
+    # CGO_ENABLED=0, e qui **si esce di proposito dalle linee guida Go di
+    # Arch**, che prescrivono un binario dinamico con PIE e i flag di hardening
+    # della distro.
+    #
+    # La ragione e' che npz spedisce lo stesso identico binario su ogni canale —
+    # pacchetto npm, script di installazione, .deb, questo — e quella identita'
+    # e' verificabile solo se la costruzione e' una sola. Su Arch il dinamico
+    # non darebbe alcun vantaggio pratico (la distro garantisce gia' la propria
+    # glibc), mentre due binari diversi darebbero due modi diversi di rompersi.
+    #
+    # I due simboli di versione si marchiano insieme, come fa build.sh: la
+    # versione che `npz` stampa e quella che finisce nel `creata_da` di uno
+    # store non devono potersi contraddire.
+    export CGO_ENABLED=0
+    go build -trimpath \
+        -ldflags="-s -w -X npz/internal/facciata.Versione=$pkgver \
+                        -X npz/internal/nucleo.Versione=$pkgver" \
+        -o "$pkgname" .
+}
+
+check() {
+    cd "$pkgname-$pkgver/npz_go"
+    # Solo `vet`: i banchi veri stanno in test/ e vogliono montare immagini
+    # EROFS, che dentro makepkg non e' il posto giusto per farlo.
+    go vet ./...
+}
+
+package() {
+    # Da qui, invece, si guarda l'albero intero: il binario e' sceso in
+    # `npz_go/`, il README sta in cima come nel repo.
+    cd "$pkgname-$pkgver"
+    install -Dm755 "npz_go/$pkgname" "$pkgdir/usr/bin/$pkgname"
+    install -Dm644 README.md "$pkgdir/usr/share/doc/$pkgname/README.md"
+}

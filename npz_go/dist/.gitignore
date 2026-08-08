@@ -1,0 +1,14 @@
+# Qui dentro non si versiona niente, e non per prudenza: perché ogni file di
+# questa cartella è *derivato* da `progetto.conf`. I pacchetti li costruisce
+# `build/bin/pacchetto.sh`, e con loro genera anche le ricette — `npz.spec`,
+# `PKGBUILD-aur` — e il `SHA256SUMS` che le copre. Committare una ricetta
+# generata vuol dire tenere due versioni dello stesso numero: quella in
+# `progetto.conf`, che chi rilascia aggiorna, e questa, che si aggiorna da sola
+# e in un momento diverso. Prima o poi si rilascia con la seconda.
+#
+# La cartella invece resta, perché è dove il rilascio va a finire e perché il
+# suo nome compare nelle istruzioni: `dist/` è quel che si allega, `lavoro/` è
+# quel che si prova. Sono due cose diverse, e confonderle è il modo più rapido
+# per pubblicare un binario di ieri.
+*
+!.gitignore

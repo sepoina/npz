@@ -1,0 +1,10 @@
+# I binari non si versionano: li rifà `build/build.sh` in una frazione di
+# secondo, e uno committato per sbaglio sarebbe subito più vecchio del codice.
+# La cartella invece resta, perché fa parte della struttura.
+#
+# Qui dentro sta il *lavoro*: i binari con cui si prova quel che si è appena
+# scritto. Quel che si spedisce sta in `npz_go/dist/`, e sono due cose diverse
+# proprio perché confonderle è il modo più rapido per pubblicare un binario di
+# ieri.
+*
+!.gitignore

@@ -1,0 +1,61 @@
+# Che cosa non entra in git, e perché.
+#
+# La regola sotto tutte le regole: non si versiona quel che una macchina sa
+# rifare da sé. Un file generato e committato non è una copia di sicurezza, è
+# una seconda verità che invecchia — e quando le due divergono lo si scopre
+# sempre tardi, e sempre dal lato sbagliato.
+#
+# Le cartelle che sono *interamente* generate non compaiono qui: hanno un
+# `.gitignore` proprio, dentro di sé — `npz_go/build/lavoro/` e `npz_go/dist/`.
+# Sta lì perché la spiegazione stia accanto alla cosa spiegata, e perché quel
+# file è anche ciò che tiene la cartella nell'albero: git versiona file, non
+# diretori, e una cartella vuota sparirebbe al primo clone.
+
+# ── Python ───────────────────────────────────────────────────────────────────
+#
+# Il bytecode lo rifà l'interprete alla prima importazione, ed è marchiato con
+# la versione che l'ha scritto (`cpython-314`): committarlo significa portarsi
+# dietro il numero di versione di *una* macchina dentro il codice di tutte.
+__pycache__/
+*.py[cod]
+
+# Ambienti virtuali e metadati di installazione: appartengono alla macchina che
+# li ha creati, non al progetto. Si rifanno da un requirements, non da un clone.
+.venv/
+venv/
+*.egg-info/
+.eggs/
+
+# Cache degli attrezzi. Pura memoria di lavoro: cancellarle non perde nulla.
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ── Go ───────────────────────────────────────────────────────────────────────
+#
+# I binari di npz hanno due case sole — `build/lavoro/` per provare e `dist/`
+# per spedire — e ognuna si ignora da sé. Quel che resta da coprire qui sono i
+# binari *fuori posto*: quelli che un `go build` lanciato a mano lascia cadere
+# nella cartella da cui l'hai lanciato, che è esattamente il modo in cui un
+# eseguibile finisce committato senza che nessuno l'abbia deciso.
+/npz_go/npz
+
+# Gli eseguibili dei test (`go test -c`) e i profili del profiler: strumenti di
+# un'indagine, non del progetto. Durano quanto l'indagine.
+*.test
+*.out
+*.prof
+
+# ── editor e sistema ─────────────────────────────────────────────────────────
+#
+# Questo albero vive su un disco condiviso, quindi la lista tiene dentro anche
+# lo sporco che ci lascia un sistema che non è quello di sviluppo.
+*~
+.*.sw[a-p]
+.idea/
+.vscode/
+.directory
+.Trash-*
+.DS_Store
+Thumbs.db
+desktop.ini
