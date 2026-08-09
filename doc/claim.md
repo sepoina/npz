@@ -1,441 +1,196 @@
 # Idea progettuale — `freeze`
 
-> Questo è il disegno di **`freeze`**, il progetto da cui `npz` discende. `freeze`
-> non vive più in questo repo; il documento resta perché le tre invarianti — un
-> solo lock, formato versionato, costruisci prima di cancellare — e le misure che
-> le hanno prodotte sono sue, e `npz` le eredita per intero. Dove qui si legge
-> `.freeze-blobs`, in `npz` si legge `.npz`: è la parametrizzazione del §4 del
-> [piano di implementazione](<piano di implementazione.md>).
+> Il disegno di **`freeze`**, il progetto da cui `npz` discende. `freeze` non vive
+> più in questo repo; il documento resta perché le tre invarianti — un solo lock,
+> formato versionato, costruisci prima di cancellare — e le misure che le hanno
+> prodotte sono sue, e `npz` le eredita per intero. Dove qui si legge
+> `.freeze-blobs`, in `npz` si legge `.npz`.
 
 ## Motivazione
 
-Sempre più spesso duplichiamo alberi nello sviluppo del software. Non è tanto lo
-spazio a pesare: sono i **file**. Un `node_modules` sono decine di migliaia di
-inode che attraversano ogni backup, ogni indicizzazione, ogni scansione
-antivirus, ogni `du` lanciato per capire dove sia finito il disco. Sette progetti
-React su questa macchina fanno **258.450 file**. Non uno di quei file è
-interessante per chi ci lavora: sono un effetto collaterale di `npm install`.
-
-`freeze` li fa sparire. Ognuna di quelle cartelle diventa **un solo file**, una
-immagine di sola lettura montabile all'istante. Sette cartelle, sette file.
+Duplichiamo alberi in continuazione, e non è lo spazio a pesare: sono i **file**. Un
+`node_modules` sono decine di migliaia di inode che attraversano ogni backup, ogni
+indicizzazione, ogni scansione antivirus, ogni `du`. Sette progetti React su questa
+macchina fanno **258.450 file**, e nessuno è interessante per chi ci lavora: sono un
+effetto collaterale di `npm install`. `freeze` li fa sparire — ogni cartella diventa
+**un solo file**, una immagine di sola lettura montabile all'istante.
 
 | | prima | dopo |
 | --- | --- | --- |
 | file | 258.450 | **7** |
 | spazio occupato | 2,2 GiB | **736 MiB** |
 
-Lo spazio è il beneficio secondario, ma non è piccolo: un terzo dell'originale,
-perché il contenuto di un albero di dipendenze è JavaScript e JSON, cioè testo,
-e il testo si comprime a metà. Il resto lo recupera l'impacchettamento: su ext4
-un albero di 258.450 file occupa 2,2 GiB per 1,4 GiB di dati veri, perché ogni
-file si arrotonda al blocco. Mettendoli tutti dentro una immagine, quello spreco
-sparisce.
+Lo spazio è il beneficio secondario, ma è un terzo dell'originale: il contenuto è
+testo e si comprime a metà, e il resto lo recupera l'impacchettamento — su ext4 quei
+file occupano 2,2 GiB per 1,4 GiB di dati veri, perché ognuno si arrotonda al blocco.
 
-**Anche una cartella sola ci guadagna.** Non serve che esistano copie multiple,
-non serve condivisione fra progetti: il beneficio viene dal comprimere e
-dall'impacchettare, non dal deduplicare. Questo è un punto su cui il progetto ha
-cambiato idea a metà strada, e il perché sta nel
-[taccuino di viaggio](<taccuino di viaggio.md>).
+**Anche una cartella sola ci guadagna**: il beneficio viene dal comprimere e
+dall'impacchettare, non dal deduplicare. È il punto su cui il progetto ha cambiato
+idea a metà strada — voce 5 del [taccuino](<taccuino di viaggio.md>).
 
-## Vincoli
-
-| Vincolo | Significato |
-| --- | --- |
-| **Semplicità** | il sistema non deve apparire complesso |
-| **Scalarità** | il sistema non deve inchiodare a fronte della complessità |
-| **Sicurezza** | il sistema non deve perdere dati |
-| **Snellimento** | il sistema deve ridurre significativamente il file sparse |
-| **Velocità di avvio** | il sistema deve avviarsi velocemente |
-| **Velocità di uscita** | il sistema deve fermarsi velocemente |
-| **Trasparenza** | il sistema deve sembrare parte del sistema operativo |
-| **Integrazione nel s.o.** | utilizzo di strumenti di sistema ove possibile, per velocizzare l'applicativo |
+**I vincoli**, in ordine: semplicità, scalarità, sicurezza dei dati, snellimento,
+velocità di avvio e di uscita, trasparenza — il sistema deve sembrare parte del
+sistema operativo — e integrazione, cioè strumenti di sistema ove possibile.
 
 ## Obiettivo operativo
-
-Nel sistema operativo Linux c'è un nuovo comando `freeze`.
 
 | Comando | Effetto |
 | --- | --- |
 | `freeze init` | dichiara la directory corrente come radice di lavoro |
 | `freeze imageA` | prende la cartella `imageA` e sembra farla scomparire |
-| `freeze decompress imageA` | riporta in vita la sottocartella `imageA` |
-| `freeze list` | torna la lista delle immagini presenti |
-| `freeze purge` | lancia la procedura di riconciliazione (vedi oltre) |
+| `freeze decompress imageA` | la riporta in vita |
+| `freeze list` | le immagini presenti |
+| `freeze purge` | la procedura di riconciliazione |
 | `freeze fsck` | verifica l'integrità e ricostruisce ciò che è derivabile |
 
 Nella radice compare una sola sottocartella di servizio, `.freeze-blobs`, che
-contiene tutto: immagini, delta e metadati. Il punto iniziale la rende invisibile
-a `ls`, ai file manager e ai glob della shell — il sistema non si vede, come
-richiede il vincolo di trasparenza.
+contiene tutto. Il punto iniziale la rende invisibile a `ls`, ai file manager e ai
+glob: il sistema non si vede, come chiede il vincolo di trasparenza.
 
-## Cosa produce `freeze`
+## Cosa produce
 
-Una immagine [EROFS] compressa per cartella congelata, e nient'altro. Non c'è un
-object store, non ci sono oggetti condivisi fra immagini, e di conseguenza non
-esistono garbage collection, oggetti orfani, refcount da mantenere allineati né
-un ciclo di vita da mettere in sicurezza. **Ogni immagine è autosufficiente**:
-si può copiare, spostare, cancellare da sola, e ciò che vale per una non tocca
-le altre.
-
-Questa autosufficienza è ciò che rende il sistema semplice, e la semplicità era
-il primo dei vincoli.
+Una immagine [EROFS] compressa per cartella, e nient'altro. Niente object store,
+niente oggetti condivisi, e quindi **niente garbage collection, orfani, refcount né
+ciclo di vita da mettere in sicurezza**. Ogni immagine è autosufficiente: si può
+copiare, spostare, cancellare da sola. È questa autosufficienza a rendere il sistema
+semplice, e la semplicità era il primo dei vincoli.
 
 | Strumento | Ruolo |
 | --- | --- |
-| **mkfs.erofs** | costruisce l'immagine, con i contenuti compressi dentro |
+| **mkfs.erofs** | costruisce l'immagine, contenuti compressi dentro |
 | **erofsfuse** | la monta in sola lettura, in user space |
 | **fuse-overlayfs** | ci sovrappone il delta scrivibile, in user space |
-| **EROFS** (kernel) | l'alternativa privilegiata, più veloce, quando root c'è |
-| **overlayfs** (kernel) | idem, per il delta |
+| **EROFS / overlayfs** (kernel) | l'alternativa privilegiata, più veloce, quando root c'è |
 
-La compressione va scelta **`lz4hc`**. Misurato sull'accesso sparso a cache
-fredda — il carico di un bundler che risolve moduli, che è il caso peggiore —
-un'immagine compressa `lz4hc` è **più veloce** di una non compressa e occupa il
-40% in meno: comprimere significa leggere meno byte dal supporto, e `lz4`
-decomprime più in fretta di quanto il supporto consegni. `zstd` comprime uguale
-ma decomprime più lentamente, e torna ai tempi del grezzo senza guadagnare
-spazio. La compressione, in questo sistema, **non si paga**.
+La compressione va scelta **`lz4hc`**: misurata sull'accesso sparso a cache fredda —
+il caso peggiore — è più veloce di una immagine non compressa e occupa il 40% in
+meno. Qui la compressione non si paga (voce 6 del taccuino).
 
-### Niente privilegi
-
-Lo stack si monta interamente in user space: `erofsfuse` per lo strato di sola
-lettura, `fuse-overlayfs` per il delta. Verificato da utente non privilegiato:
-lettura, scrittura nel delta, copy-up, whiteout, rotazione del delta e
-consolidamento funzionano tutti senza `sudo`.
-
-Dove root è disponibile si può usare la via del kernel — `mount -t erofs` più
-`mount -t overlay` — che è più veloce. Ma è un'ottimizzazione, non un requisito,
-e il modulo di mount tiene le due dietro la stessa interfaccia.
+**Niente privilegi.** Lo stack si monta interamente in user space, verificato da
+utente non privilegiato per lettura, scrittura, copy-up, whiteout, rotazione e
+consolidamento. La via del kernel è un'ottimizzazione dietro la stessa interfaccia,
+non un requisito.
 
 ## Dove vive `.freeze-blobs`
 
-`freeze` non è vincolato alla cartella corrente: **risale l'albero** come fa
-`git` con `.git`, e si aggancia al primo `.freeze-blobs` che incontra. Lo si può
-quindi lanciare da qualsiasi sottocartella.
+`freeze` **risale l'albero** come `git` con `.git`. La radice non serve a definire un
+perimetro di deduplicazione — non c'è niente da deduplicare — ma a dare un posto solo
+al demone, un lock, una configurazione. Due limiti, entrambi a tutela dei dati: **la
+risalita trova, non crea** (lo store nasce solo con un `init` esplicito, altrimenti un
+`freeze` lanciato per errore si aggancerebbe in silenzio a una radice otto livelli più
+su), e **si ferma al confine di filesystem**, perché l'upperdir di overlayfs deve
+stare sullo stesso filesystem del suo workdir.
 
-La radice non serve più a definire un perimetro di deduplicazione — non c'è
-niente da deduplicare. Serve a dare un posto solo al demone, un solo lock, una
-sola configurazione, e a tenere l'albero autosufficiente e trasportabile.
+Serve un filesystem che regga un `upperdir` e conservi i permessi POSIX, il che
+esclude di fatto tutto ciò che passa da FUSE. La dimensione invece non dipende dal
+supporto: l'immagine è un file solo, niente arrotondamento al blocco, niente reflink.
 
-Due limiti alla risalita, entrambi a tutela dei dati:
-
-- **La risalita trova, non crea.** Lo store nasce solo con un `freeze init`
-  esplicito. Altrimenti un `freeze` lanciato per errore in una directory
-  qualsiasi si aggancerebbe in silenzio a una radice che sta otto livelli più su,
-  e l'utente non avrebbe idea di dove siano finiti i suoi dati.
-- **La risalita si ferma al confine di filesystem.** Lo strato scrivibile di
-  overlayfs deve stare sullo stesso filesystem del suo workdir, quindi una radice
-  trovata oltre un mount point sarebbe inutilizzabile.
-
-Non tutti i filesystem possono ospitare `.freeze-blobs`, e `freeze init` deve
-rifiutarsi di crearlo dove non ha senso. Il requisito è che il filesystem regga
-un `upperdir` di overlayfs e conservi i permessi POSIX — il che esclude di fatto
-tutto ciò che passa da FUSE. Su NTFS via `ntfs-3g`, per dirne una misurata,
-`chmod 700` viene riletto come `777`: i permessi non sopravvivono nemmeno al giro
-di andata.
-
-Il filesystem sottostante non incide invece sulla dimensione: l'immagine è un
-file solo, quindi non c'è arrotondamento al blocco da pagare e non serve il
-reflink.
-
-## Cosa avviene dietro le quinte
-
-### La struttura interna è di questo tipo
+## Come è fatto dentro
 
 ```text
-~/lavoro/                            ← radice: qui è stato lanciato `freeze init`
-│
+~/lavoro/                          ← radice: qui è stato lanciato `freeze init`
 ├── .freeze-blobs/
-│   │
-│   ├── static/                      ← immagini EROFS, sola lettura
-│   │   ├── cliente-x/
-│   │   │   ├── node_modules.img
-│   │   │   └── node_modules.meta
-│   │   └── cliente-y/
-│   │       ├── node_modules.img
-│   │       └── node_modules.meta
-│   │
-│   └── dynamic/                     ← delta scrivibili, il "purgatorio"
-│       ├── cliente-x/node_modules/
-│       └── cliente-y/node_modules/
-│
-├── cliente-x/
-│   ├── src/
-│   └── node_modules.freeze.txt      ← segnaposto: congelata
-│
-└── cliente-y/
-    ├── src/
-    └── node_modules/                ← congelata, ma attualmente montata
+│   ├── static/cliente-x/node_modules.img · .meta   ← immagini, sola lettura
+│   └── dynamic/cliente-x/node_modules/             ← delta, il "purgatorio"
+├── cliente-x/node_modules.freeze.txt   ← segnaposto: congelata
+└── cliente-y/node_modules/             ← congelata, ma attualmente montata
 ```
 
-### La catena inversa
+`static/` e `dynamic/` **rispecchiano il percorso relativo alla radice**, perché il
+solo nome non basta a identificare un'immagine: un `node_modules` in `cliente-x/` e
+uno in `cliente-y/` collidono. È la **catena inversa** — dal segnaposto si risale
+alla radice, e da lì si ridiscende nello store. Il percorso è così esso stesso
+l'indice: nessun registro da tenere allineato, `list` è una scansione di `static/`, e
+lo stato resta ispezionabile a mano.
 
-Poiché la radice può trovarsi molti livelli sopra la cartella su cui si sta
-lavorando, il solo nome dell'immagine non basta a identificarla: un
-`node_modules` congelato in `cliente-x/` e uno in `cliente-y/` collidono.
+**Il segnaposto.** Dove c'era la cartella resta `imageA.freeze.txt`, che dichiara
+apertamente di non essere un archivio: dice dove la cartella va ricreata, che
+copiarlo non copia nulla, e le due date del ciclo di vita. **Non è mai la fonte di
+verità** — tutto è derivato dal `.meta`, e `fsck` lo rigenera. Fa eccezione un caso
+solo: se la cartella che lo contiene viene **rinominata**, la catena inversa si
+spezza e il segnaposto è l'unico posto in cui sopravvive il percorso originale.
 
-Per questo `static/` e `dynamic/` **rispecchiano il percorso relativo alla
-radice**. È la catena inversa: dal segnaposto si risale alla radice, e dalla
-radice si ridiscende nello store fino all'immagine corrispondente.
+**Quando il mount non c'è più**, il mountpoint resta lì **vuoto**, che è l'aspetto
+esatto di una perdita di dati. Dentro si crea perciò un file nascosto sul filesystem
+sottostante, `.freeze_fsck_for_reconstruct_this_dir`: col mount attivo è coperto
+dall'overlay, senza mount è l'unica cosa presente e dichiara nel proprio nome tanto il
+problema quanto il rimedio.
 
-```text
-   cliente-x/node_modules.freeze.txt
-        │
-        │  risalita fino alla radice
-        ▼
-   ~/lavoro/.freeze-blobs/
-        │
-        │  ridiscesa lungo lo stesso percorso relativo
-        ▼
-   static/cliente-x/node_modules.img   +   dynamic/cliente-x/node_modules/
-```
-
-Il percorso diventa così esso stesso l'indice: nessun registro separato da
-tenere allineato, `freeze list` è una scansione di `static/`, e lo stato resta
-ispezionabile a mano con i normali strumenti di sistema.
-
-### Il segnaposto
-
-Dove c'era la cartella congelata resta un piccolo file di testo,
-`imageA.freeze.txt`. Non è un archivio, e lo dichiara apertamente: è un
-segnaposto leggibile che spiega cosa è successo e come tornare indietro.
-
-```text
-Questa non è una cartella compressa: è un segnaposto.
-La cartella "node_modules" è stata congelata dal comando `freeze`.
-I dati NON si trovano in questo file: copiarlo altrove non copia nulla.
-
-Per riportarla in vita:      freeze decompress node_modules
-
-radice           ../.freeze-blobs
-percorso         cliente-x/node_modules
-immagine         static/cliente-x/node_modules.img
-creata           2026-07-31 15:44:02
-incardinata      2026-08-07 03:12:55
-
-File generato automaticamente: se viene cancellato, `freeze fsck` lo ricostruisce.
-```
-
-Il segnaposto assolve tre funzioni: dice **dove** la cartella va ricreata,
-dichiara **cosa non è** — disinnescando l'illusione di avere fra le mani un file
-da backuppare — e riporta le due date che raccontano il ciclo di vita
-dell'immagine, quella di costruzione e quella di incardinamento nell'immagine
-statica.
-
-**Il segnaposto non è mai la fonte di verità.** Tutto ciò che contiene è
-derivato dai metadati conservati in `.freeze-blobs` (il file `.meta` accanto
-all'immagine): se un `rm`, un tool di build o una `.gitignore` distratta lo
-fanno sparire, non si è perso nulla e `freeze fsck` lo rigenera.
-
-Fa eccezione un caso solo: se la cartella che contiene il segnaposto viene
-**rinominata**, la catena inversa si spezza, e il segnaposto è l'unico posto in
-cui sopravvive il percorso originale. Per quel caso è autorevole, e `fsck` deve
-saperlo usare per riagganciare.
-
-### Quando il mount non c'è più
-
-Al montaggio il segnaposto sparisce e la cartella prende il suo posto. Ma il
-mountpoint è una cartella vera sul filesystem sottostante: se il mount cade —
-un riavvio, un `umount`, uno smontaggio di sistema — quella cartella resta lì
-**vuota**. È l'aspetto esatto di una perdita di dati, e sarebbe la reazione
-istintiva di chiunque la trovasse così.
-
-Dentro il mountpoint viene perciò creato un file nascosto,
-`.freeze_fsck_for_reconstruct_this_dir`, che risiede sul filesystem sottostante:
-
-- con il mount attivo è **coperto dall'overlay**, quindi invisibile;
-- senza mount è **l'unica cosa presente** nella cartella, e dichiara nel proprio
-  nome tanto la natura del problema quanto il modo di risolverlo.
-
-Del ripristino vero e proprio si occuperà il demone. Nel frattempo il file rende
-la situazione riconoscibile sia a occhio sia a `freeze fsck`.
-
-### Il freeze, la prima volta
-
-L'immagine viene creata **subito**, non dopo un periodo di attesa:
-
-- `mkfs.erofs` costruisce l'immagine compressa nel percorso rispecchiato dentro
-  `static/`, contenuti inclusi;
-- il delta scrivibile in `dynamic/` nasce vuoto;
-- **solo a questo punto** la cartella originale scompare e al suo posto compare
-  `imageA.freeze.txt`.
-
-```text
-   PRIMA                          DOPO
-
-   cliente-x/                     cliente-x/
-   └── node_modules/              └── node_modules.freeze.txt   ← segnaposto
-       ├── src/
-       │   ├── a.js               .freeze-blobs/
-       │   └── b.js               ├── static/…/node_modules.img ← tutto qui dentro
-       └── pkg/                   └── dynamic/…/node_modules/   ← vuota
-           └── c.js
-```
-
-Costruire l'immagine da subito è economico — 258.450 file in 8,5 secondi — e fa
-sì che il beneficio si manifesti al primo `freeze`, non a distanza di giorni.
-
-### Il decompress
-
-- nuova creazione della cartella `imageA` al posto del segnaposto;
-- montaggio dell'immagine come strato di sola lettura;
-- sovrapposizione del delta in `dynamic/` come strato scrivibile;
-- tutte le modifiche finiscono nel delta, mentre l'immagine statica resta tale.
-
-```text
-                 imageA/            ← ciò che l'utente vede
-                    ▲
-        ┌───────────┴───────────┐
-        │                       │
-   dynamic/…/imageA        static/…/imageA.img
-   scrivibile              sola lettura
-   (le modifiche)          (tutto il contenuto)
-```
-
-Il montaggio costa meno di un decimo di secondo.
+**Il freeze e il decompress.** L'immagine si costruisce **subito**: si crea in
+`static/`, nasce il delta vuoto, e **solo allora** la cartella originale scompare.
+Costruire da subito è economico — 258.450 file in 8,5 s — e fa sì che il beneficio si
+veda al primo `freeze`. Il `decompress` ricrea la cartella, monta l'immagine e ci
+sovrappone il delta: meno di un decimo di secondo.
 
 ## Come evolve l'immagine statica
 
-Questa è la parte centrale del progetto. In una fase iniziale la cosa può
-avvenire manualmente, ma si prevede l'esistenza di un daemon che lavori a basso
-livello.
+C'è un tempo di cristallizzazione `tc`, ipotizziamo una settimana, e **a comandare è
+il timestamp dell'immagine, non quello dei singoli file**. A ogni `purge`: delta fermo
+da più di `tc` → consolidamento totale; delta oltre il **30%** della dimensione
+dell'immagine → consolidamento alla prima finestra; altrimenti si lascia stare.
 
-La regola generale è che ci sia un tempo di cristallizzazione, chiamiamolo `tc`,
-ipotizziamo una settimana. **A comandare è il timestamp dell'immagine, non
-quello dei singoli file.**
+La soglia dimensionale esiste perché il tempo da solo non basta: una cartella su cui
+si lavora ogni giorno non raggiunge mai `tc`, e per via del copy-up basta un
+`npm install` perché interi file finiscano nel delta — senza soglia il contenuto
+esisterebbe due volte.
 
-Al lancio della procedura di riconciliazione (`freeze purge`) ogni immagine viene
-guardata nel suo insieme. Due condizioni indipendenti possono farla consolidare:
+**Il merge lo fa il kernel**: si rimonta lo stack in sola lettura e si dà a
+`mkfs.erofs` la vista già fusa. Nessuna logica di whiteout da scrivere. **I tre
+tempi**: si ruota il delta e si costruisce la nuova immagine su un nome temporaneo,
+senza toccare nulla di esistente; si applica con un rename atomico; **solo allora** si
+cancella il delta *ruotato*.
 
-| Condizione | Azione |
-| --- | --- |
-| delta fermo da più di `tc` | **consolidamento totale** |
-| delta cresciuto oltre il **30%** della dimensione dell'immagine | **consolidamento alla prima finestra utile** |
-| nessuna delle due | **si lascia stare** |
+La rotazione non è un abbellimento: senza, fra la lettura del delta e il suo
+svuotamento passa tutto il tempo di costruzione, e le scritture dell'utente in
+quell'intervallo sparirebbero. Va fatta fra smontaggio e rimontaggio — overlayfs non
+tollera che i propri layer cambino sotto di sé — al costo di **17 ms**. Ragionare per
+immagine anziché per file evita di riconciliare un delta a metà, e rende ogni `purge`
+atomico e ripetibile.
 
-La seconda condizione esiste perché il tempo da solo non basta. Una cartella su
-cui si lavora ogni giorno non raggiunge mai `tc`, e per via del copy-up di
-overlayfs basta un `npm install` o un `chmod -R` perché interi file vengano
-copiati nel delta: senza una soglia dimensionale il contenuto finirebbe per
-esistere due volte, nell'immagine e nel delta, annullando il risparmio.
+## Perimetro
 
-### Il merge lo fa il kernel
-
-Il consolidamento non interpreta whiteout né xattr. Si rimonta lo stack in sola
-lettura e si dà a `mkfs.erofs` **la vista già fusa**, che è il modo in cui
-overlayfs presenta il risultato del merge. Verificato end-to-end: whiteout
-assorbiti, directory opache risolte, permessi e symlink conservati, e l'immagine
-risultante coincide byte a byte con ciò che l'utente vedeva prima.
-
-Il consolidamento sono tre righe, e non c'è alcuna logica di merge da scrivere né
-da mantenere.
-
-### I tre tempi
-
-1. **rotazione e costruzione** — il delta corrente viene rinominato in un nome
-   di lavoro e al suo posto ne nasce uno vuoto; la nuova immagine viene generata
-   dalla vista fusa del delta ruotato, su un nome temporaneo; nulla di esistente
-   viene toccato;
-2. **applicazione** — la nuova immagine sostituisce la precedente con un rename
-   atomico;
-3. **cancellazione** — solo ora il delta *ruotato* viene rimosso e la data di
-   incardinamento registrata nei metadati.
-
-La rotazione non avviene sotto il mount attivo: overlayfs non tollera che i
-propri layer cambino sotto di sé. Va fatta fra uno smontaggio e un rimontaggio,
-che misurati costano **17 millisecondi** di indisponibilità.
-
-La rotazione al primo tempo non è un abbellimento: senza, il consolidamento
-perde dati. Fra la lettura del delta e il suo svuotamento passa tutto il tempo di
-costruzione dell'immagine, e in quell'intervallo l'utente può scrivere. Quelle
-scritture verrebbero cancellate senza essere mai entrate nell'immagine — una
-perdita silenziosa proprio dentro l'operazione che dovrebbe mettere i dati al
-sicuro. Ruotando il delta prima di leggerlo, le scritture successive atterrano
-nel delta nuovo e sopravvivono: verificato scrivendo nella cartella mentre il
-consolidamento era in corso, e ritrovando la scrittura al suo posto a operazione
-conclusa.
-
-In questo modo i file molto dinamici evitano operazioni di scrittura infinita
-sull'immagine: finché ci si lavora sopra, non viene mai toccata. Una cartella
-ferma per più di una settimana finisce invece interamente per diventare immagine
-statica. `dynamic` è l'immagine di un "purgatorio".
-
-Ragionare per immagine anziché per singolo file evita di dover riconciliare un
-delta a metà — con whiteout e cancellazioni applicati solo in parte — e rende
-ogni `purge` un'operazione atomica e ripetibile.
-
-## Perimetro: cosa si può congelare
-
-Quasi tutto. EROFS conserva hardlink con il loro `nlink` e lo stesso inode, fifo,
-socket, device node, symlink rotti, xattr utente e permessi; e i file sparsi non
-vengono riespansi, perché la compressione riduce gli zeri a nulla — un file
-sparso da 64 MiB entra in un'immagine da 319 KiB. Tutti i divieti che il progetto
-si era dato all'inizio erano imposti dall'object store, non dal formato, e sono
-caduti con lui.
-
-Restano due casi:
-
-| Condizione | Comportamento |
-| --- | --- |
-| processi attivi dentro la cartella | **rifiuta** |
-| ownership che richiede privilegi | **avvisa** che serve `sudo`, altrimenti procede a livello utenza |
-
-I processi attivi si rilevano con `fuser -m`, o leggendo `/proc/*/cwd` dove
-`fuser` non c'è.
-
-Sull'ownership: se l'albero appartiene interamente all'utente, freeze e
-ripristino funzionano senza privilegi. Se contiene file di altri utenti, l'uid e
-il gid finiscono correttamente nell'immagine, ma un mount FUSE non privilegiato
-non li rende accessibili agli altri utenti senza `allow_other` — e `freeze` lo
-dice prima di cominciare, invece di produrre un ripristino silenziosamente
-sbagliato.
+Quasi tutto si congela: EROFS conserva hardlink con `nlink` e stesso inode, fifo,
+socket, device node, symlink rotti, xattr utente e permessi, e i file sparsi non si
+riespandono — 64 MiB stanno in 319 KiB. I divieti iniziali erano imposti dall'object
+store, non dal formato, e sono caduti con lui. Restano due casi: **processi attivi**
+dentro la cartella, che fanno rifiutare l'operazione (`fuser -m`, o `/proc/*/cwd`), e
+**ownership che richiede privilegi**, che fa avvisare che serve `sudo`. Su
+quest'ultima: uid e gid finiscono correttamente nell'immagine, ma un mount FUSE non
+privilegiato non li rende accessibili ad altri utenti senza `allow_other` — e
+`freeze` lo dice prima di cominciare, invece di produrre un ripristino
+silenziosamente sbagliato.
 
 ## Invarianti operative
 
-Tre regole che valgono per ogni operazione che scrive. Vanno rispettate fin
-dalla prima implementazione: costano poco adesso e molto dopo.
+Tre regole per ogni operazione che scrive. Costano poco adesso e molto dopo.
 
 **Prima si costruisce, poi si applica, infine si cancella.** Nessuna operazione
-distruttiva precede la creazione della struttura che la sostituisce. Vale per il
-freeze — l'immagine esiste ed è verificata prima che la cartella originale
-sparisca — e vale per il purge. Il corollario operativo è che ciò che si cancella
-al terzo tempo non deve mai essere ciò che il sistema sta ancora usando: da qui
-la rotazione del delta.
+distruttiva precede la creazione della struttura che la sostituisce; il corollario è
+che ciò che si cancella al terzo tempo non deve mai essere ciò che il sistema sta
+ancora usando — da qui la rotazione. Ne discende una proprietà preziosa: **ogni
+operazione è idempotente**, quindi non serve un journal.
 
-Ne discende una proprietà preziosa: **ogni operazione è idempotente**. Se manca
-la corrente a metà, rilanciarla porta allo stesso risultato — riapplicare un
-delta a un'immagine che lo contiene già produce la stessa immagine, e cancellare
-ciò che è già assente è un no-op. Non serve un journal.
+**Un solo lock.** Ogni scrittura prende un `flock` esclusivo su `.freeze-blobs/lock`.
+Un lock granulare si potrà sempre aggiungere; introdurre il *primo* lock in un codice
+scritto assumendo l'esclusività è invece doloroso.
 
-**Un solo lock.** Ogni operazione che scrive prende un `flock` esclusivo su
-`.freeze-blobs/lock`. Due `freeze` in parallelo, o il futuro demone insieme alla
-CLI, altrimenti si pestano i piedi. Un lock granulare si potrà sempre aggiungere;
-introdurre il *primo* lock in un codice scritto assumendo l'esclusività è invece
-doloroso.
-
-**Il formato è versionato.** Un campo `version` in `.freeze-blobs/config` e in
-ogni `.meta`, più la versione del formato EROFS e l'algoritmo di compressione
-usati per generare l'immagine. Senza, il primo cambio di formato renderebbe
-illeggibili le immagini esistenti — cioè perderebbe dati.
+**Il formato è versionato.** Un campo `version` in `config` e in ogni `.meta`, più
+versione EROFS e algoritmo di compressione. Senza, il primo cambio di formato
+renderebbe illeggibili le immagini esistenti — cioè perderebbe dati.
 
 ## Fuori scope in questa fase
 
-- **Deduplicazione fra cartelle.** Misurata e scartata: su progetti reali e
-  distinti costa il 50% di spazio in più della semplice compressione, migliaia
-  di inode, sei volte il tempo di costruzione, e richiede root. Paga solo su
-  copie quasi identiche. Il ragionamento completo è nel
-  [taccuino di viaggio](<taccuino di viaggio.md>).
-- **Situazioni e flag** che saranno necessari per rendere sicuro l'approccio
-  (duplicazione cartelle in elaborazione, etc).
-- **Cancellazione di una cartella.** Al momento essa sopravvive perché è solo
-  speculare di qualcosa che si trova in `.freeze-blobs`.
+- **Deduplicazione fra cartelle.** Misurata e scartata: costa il 50% di spazio in più
+  della semplice compressione, migliaia di inode, sei volte il tempo di costruzione, e
+  richiede root ([taccuino](<taccuino di viaggio.md>), voce 5).
+- **Situazioni e flag** per rendere sicuro l'approccio, e la **cancellazione di una
+  cartella**.
 
 ## Rimandi
 
-- [taccuino di viaggio.md](<taccuino di viaggio.md>) — cosa è stato misurato,
-  cosa ne è seguito, e le idee che i numeri hanno smontato.
+- [taccuino di viaggio.md](<taccuino di viaggio.md>) — le misure, e le idee che hanno
+  smontato.
 - [piano di implementazione.md](<piano di implementazione.md>) — il piano di `npz`,
   che di questo disegno eredita le invarianti.
 
-Il piano di `freeze` e i suoi banchi — `test/fase1.sh`, `test/confronto.sh` — sono
-usciti da questo repo insieme al suo codice.
+[EROFS]: https://docs.kernel.org/filesystems/erofs.html
