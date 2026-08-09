@@ -2,70 +2,109 @@
 
 > node_modules without the node_modules
 
-`npz` è un wrapper di `npm`. Gira ogni parametro a `npm` tale e quale, e si riserva
-tre comportamenti propri: chiede una volta se congelare `node_modules`, lo congela
-in una immagine [EROFS] compressa e lo monta al suo posto, e con `npz bye` rilascia
-il mount.
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+[![Version](https://img.shields.io/badge/version-0.2.4-informational.svg)](progetto.conf)
+[![Platform](https://img.shields.io/badge/platform-Linux-lightgrey.svg)](#requirements)
+[![Privileges](https://img.shields.io/badge/privileges-none-brightgreen.svg)](#requirements)
 
-La cartella di dipendenze smette di essere decine di migliaia di inode e diventa
-**un file solo**, in sola lettura, con un delta scrivibile sopra. Sulla fixture di
-riferimento: **31.667 voci e 588 MiB** diventano una immagine da **234 MiB**, in
-1,74 secondi, e il montaggio costa 0,07 s.
+`npz` is an `npm` wrapper. It forwards every argument to `npm` untouched, and
+reserves three behaviours of its own: it asks once whether to freeze
+`node_modules`, freezes it into a compressed [EROFS] image mounted in its place,
+and releases the mount with `npz bye`.
 
-La toolchain — `node`, `npx`, i bundler, il language server — continua a vedere
-l'albero esattamente come prima. Gli attraversatori che sanno fermarsi a un confine
-di filesystem (`du -x`, `find -xdev`, `rsync -x`, `tar --one-file-system`) smettono
-di pagarlo, **senza sapere nulla di `npz`**: come mount point la cartella è *più*
-escludibile di quanto fosse come directory.
+The dependency folder stops being tens of thousands of inodes and becomes **a
+single file**, read-only, with a writable delta on top. On the reference
+fixture: **31,667 entries and 588 MiB** become a **234 MiB** image in 1.74
+seconds, and mounting costs 0.07 s.
 
-## I comandi
+The toolchain — `node`, `npx`, the bundlers, the language server — keeps seeing
+the tree exactly as before. Traversal tools that know how to stop at a
+filesystem boundary (`du -x`, `find -xdev`, `rsync -x`,
+`tar --one-file-system`) stop paying for it **without knowing anything about
+`npz`**: as a mount point, the folder is *more* excludable than it was as a
+directory.
 
-Tutto il resto va a `npm` invariato — e vale l'inverso: `npz -- attach` passa
-`attach` a npm.
-
-| Comando | Effetto |
-| --- | --- |
-| `npz attach` | attiva npz su questo progetto adesso, senza chiedere niente |
-| `npz hey` | monta ciò che `attach` ha già costruito; non costruisce mai |
-| `npz bye` | smonta, rimuove la cartella, tiene `.npz`: torna allo stato congelato |
-| `npz status` | in quale stato siamo, quanto è grande l'immagine, quanto il delta |
-| `npz compact` | forza il consolidamento adesso, invece di aspettare la soglia |
-| `npz detach` | materializza `node_modules` come cartella vera e cancella `.npz` |
-
-`npz detach` è la via d'uscita, e senza di essa il sistema non si adotta: in un
-sistema in cui si può solo entrare non entra nessuno.
-
-## Requisiti
-
-`mkfs.erofs`, `erofsfuse`, `fuse-overlayfs`, `fusermount3`, più `npm` e `node`.
-Su Arch e Manjaro: `erofs-utils`, `erofsfuse`, `fuse-overlayfs`, `fuse3` —
-`erofsfuse` è un pacchetto separato.
-
-**Nessun privilegio**: lo stack si monta interamente in user space. La via del
-kernel (`mount -t erofs` + `overlay`) è un'ottimizzazione per quando root c'è, non
-un requisito.
-
-Il progetto deve stare su un supporto su cui si possa scrivere, i cui file siano
-dell'utente e che regga il bit di esecuzione — `npz` lo verifica prima di toccare
-qualsiasi cosa, e quando rifiuta stampa la riga di `fstab` che lo rimedia.
-
-## Come si costruisce
+## Quick start
 
 ```bash
-cd npz_go/build && ./build.sh        # npz per questa macchina, in build/lavoro/
-./build.sh tutti                     # anche linux/amd64 e linux/arm64
+cd my-project
+npz install      # runs npm install, then asks once whether to freeze
+npz status       # what state we are in, image size, delta size
+npz bye          # unmount: back to the frozen state
+npz hey          # mount again — 0.07 s
+npz detach       # changed your mind: a plain folder, and .npz is gone
 ```
 
-Versione, descrizioni, manutentore, licenza e dipendenze stanno tutte in
-[progetto.conf](progetto.conf) e **da nessun'altra parte**: chi rilascia tocca quel
-file e nient'altro.
+## The commands
 
-## La documentazione
+Everything else goes to `npm` unchanged — and the inverse holds too:
+`npz -- attach` passes `attach` to npm.
 
-Sta in **[doc/](doc/)**, e l'indice è **[doc/_index.md](doc/_index.md)**: i
-documenti, la mappa del codice, i banchi e lo stato di avanzamento.
+| Command | Effect |
+| --- | --- |
+| `npz attach` | turn npz on for this project right now, no questions asked |
+| `npz hey` | mount what `attach` already built; never builds |
+| `npz bye` | unmount, remove the folder, keep `.npz`: back to the frozen state |
+| `npz status` | what state we are in, how big the image is, how big the delta |
+| `npz compact` | force consolidation now, instead of waiting for the threshold |
+| `npz detach` | materialise `node_modules` as a real folder and delete `.npz` |
 
-Chi ha fretta legga [il taccuino di viaggio](<doc/taccuino di viaggio.md>) — le
-misure che hanno smontato una dopo l'altra le idee da cui il progetto era nato.
+`npz detach` is the way out, and without it the system does not get adopted:
+nobody walks into a system you can only walk into.
+
+## Requirements
+
+**Linux only.** The whole design rests on EROFS and overlayfs, which are Linux
+filesystems; there is no macOS or Windows path, and there is not going to be
+one.
+
+`mkfs.erofs`, `erofsfuse`, `fuse-overlayfs`, `fusermount3`, plus `npm` and
+`node`. On Arch and Manjaro: `erofs-utils`, `erofsfuse`, `fuse-overlayfs`,
+`fuse3` — `erofsfuse` is a separate package.
+
+**No privileges**: the stack mounts entirely in user space. The kernel path
+(`mount -t erofs` + `overlay`) is an optimisation for when root is available,
+not a requirement.
+
+The project must live on a medium that is writable, whose files belong to the
+user, and that supports the execute bit — `npz` checks this before touching
+anything, and when it refuses it prints the `fstab` line that fixes it.
+
+## Building
+
+```bash
+cd npz_go/build && ./build.sh        # npz for this machine, into build/lavoro/
+./build.sh tutti                     # also linux/amd64 and linux/arm64
+```
+
+Version, descriptions, maintainer, licence and dependencies all live in
+[progetto.conf](progetto.conf) and **nowhere else**: whoever cuts a release
+touches that file and nothing more.
+
+## Documentation
+
+It lives in **[doc/](doc/)**, and the index is **[doc/_index.md](doc/_index.md)**:
+the documents, the map of the code, the benches and the state of progress.
+
+In a hurry? Read [the travel journal](<doc/taccuino di viaggio.md>) — the
+measurements that dismantled, one after another, the ideas the project was born
+from.
+
+> **Note.** The documentation under `doc/` is written in Italian. This README is
+> the English entry point; the design documents have not been translated.
+
+## Status
+
+`npz` is at **0.2.4** and under active development. The format is versioned —
+`config` and every `.meta` carry a `version` field — precisely so that today's
+images stay readable when the format moves.
+
+Two implementations live in this repository: `npz_go/` (the one that gets built
+and packaged) and `npz_python/`. They share [progetto.conf](progetto.conf) as
+their single source of truth for the version.
+
+## Licence
+
+Apache License 2.0 — see [LICENSE](LICENSE).
 
 [EROFS]: https://docs.kernel.org/filesystems/erofs.html
