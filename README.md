@@ -1,13 +1,23 @@
-<!-- NOTA PER CHI MODIFICA (uomo o macchina): questo README sta entro le 800
-     parole, ed è un limite, non una media. Si contano con
-     `sed '/<!--/,/-->/d' README.md | wc -w`, che esclude questa nota: il limite
-     è sulla pagina che si legge, e un `wc` nudo conteggerebbe anche il
-     commento — cioè boccerebbe un README che va benissimo. Chi aggiunge una
-     sezione conta, e se sfonda taglia altrove nello stesso passaggio. Il posto per approfondire è doc/, non questa pagina: qui si
-     decide se provare npz, e quella decisione la si prende in due minuti.
-     Il margine è finito: la prossima aggiunta paga sé stessa togliendo altrove.
-     E nessun numero di versione scritto a mano: ce n'erano due, fermi alla
-     0.2.4 mentre il progetto era alla 0.2.7. Ci pensa il badge dinamico. -->
+<!-- NOTA PER CHI MODIFICA (uomo o macchina).
+
+     Questo README sta entro le 800 parole, ed è un limite, non una media. Si
+     contano dalla prima intestazione in giù, che è dove comincia la pagina:
+
+         sed -n '/^# /,$p' README.md | wc -w
+
+     Così questa nota resta fuori dal conto. Un `wc` nudo la conterebbe, e
+     boccerebbe un README che invece va benissimo.
+
+     Chi aggiunge una sezione conta, e se sfonda taglia altrove nello stesso
+     passaggio. Il posto per approfondire è doc/, non questa pagina — qui si
+     decide se provare npz, e quella decisione si prende in due minuti.
+
+     Nessun numero di versione scritto a mano: ce n'erano due, fermi alla 0.2.4
+     mentre il progetto era alla 0.2.7. Ci pensa il badge dinamico.
+
+     Attenzione, e ci si è già cascati: qui dentro non va scritta la sequenza
+     che chiude un commento HTML. Un comando che la contenga chiude la nota
+     dove capita, e tutto il resto finisce visibile in cima alla pagina. -->
 
 # 🧊 npz
 
