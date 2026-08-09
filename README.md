@@ -28,9 +28,15 @@
 [![Platform](https://img.shields.io/badge/platform-Linux-lightgrey.svg)](#requirements)
 [![Privileges](https://img.shields.io/badge/privileges-none-brightgreen.svg)](#requirements)
 
+<br />
+<br />
+
 ![Before: a node_modules folder spilling thousands of files, 31,667 entries and
 588 MiB. After: a single block under a dashed folder outline, 1 file and 234
 MiB.](doc/img1/img1.png)
+
+<br />
+<br />
 
 ***`npz` is a Linux `npm` wrapper***. Every argument goes through to `npm`
 untouched; it adds one thing — `node_modules` becomes a single compressed
