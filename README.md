@@ -1,18 +1,26 @@
 <!-- NOTA PER CHI MODIFICA (uomo o macchina): questo README sta entro le 800
-     parole, ed è un limite, non una media. Chi aggiunge una sezione conta le
-     parole (`wc -w README.md`) e, se sfonda, taglia altrove nello stesso
-     passaggio. Il posto per approfondire è doc/, non questa pagina: qui si
+     parole, ed è un limite, non una media. Si contano con
+     `sed '/<!--/,/-->/d' README.md | wc -w`, che esclude questa nota: il limite
+     è sulla pagina che si legge, e un `wc` nudo conteggerebbe anche il
+     commento — cioè boccerebbe un README che va benissimo. Chi aggiunge una
+     sezione conta, e se sfonda taglia altrove nello stesso passaggio. Il posto per approfondire è doc/, non questa pagina: qui si
      decide se provare npz, e quella decisione la si prende in due minuti.
-     Stato attuale: ~600 parole. -->
+     Il margine è finito: la prossima aggiunta paga sé stessa togliendo altrove.
+     E nessun numero di versione scritto a mano: ce n'erano due, fermi alla
+     0.2.4 mentre il progetto era alla 0.2.7. Ci pensa il badge dinamico. -->
 
 # 🧊 npz
 
 > node_modules without the node_modules
 
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.2.4-informational.svg)](progetto.conf)
+[![Version](https://img.shields.io/github/v/release/sepoina/npz?label=version)](https://github.com/sepoina/npz/releases/latest)
 [![Platform](https://img.shields.io/badge/platform-Linux-lightgrey.svg)](#requirements)
 [![Privileges](https://img.shields.io/badge/privileges-none-brightgreen.svg)](#requirements)
+
+![Before: a node_modules folder spilling thousands of files, 31,667 entries and
+588 MiB. After: a single block under a dashed folder outline, 1 file and 234
+MiB.](doc/img1/img1.png)
 
 ***`npz` is a Linux `npm` wrapper***. Every argument goes through to `npm`
 untouched; it adds one thing — `node_modules` becomes a single compressed
@@ -34,9 +42,9 @@ curl -fsSL https://github.com/sepoina/npz/releases/latest/download/install.sh | 
 
 It picks the native package where a package manager exists — so that removing
 npz later is `pacman -R` and not `rm` — and installs the static binary where
-none does. It verifies every download against `SHA256SUMS`. Reading it before
-running it is the better habit, and the [release page](https://github.com/sepoina/npz/releases/latest)
-also carries the per-distribution commands.
+none does, and verifies every download against `SHA256SUMS`. Read it first —
+the better habit. The [release page](https://github.com/sepoina/npz/releases/latest)
+also carries per-distribution commands.
 
 ## Quick start
 
@@ -97,18 +105,16 @@ packages, and a `SHA256SUMS` that covers them.
 
 ## Documentation
 
-It all lives in **[doc/](doc/)**, indexed by
-[doc/_index.md](doc/_index.md) — the documents, the map of the code, the benches
-and the state of progress. In a hurry, read
-[the travel journal](<doc/taccuino di viaggio.md>): the measurements that
-dismantled, one after another, the ideas the project was born from. It is
-written in Italian; this README is the English entry point.
+It all lives in **[doc/](doc/)**, indexed by [doc/_index.md](doc/_index.md). In
+a hurry, read [the travel journal](<doc/taccuino di viaggio.md>): the
+measurements that dismantled, one after another, the ideas the project was born
+from. It is written in Italian; this README is the English entry point.
 
 ## Status
 
-Version **0.2.4**, under active development. The on-disk format is versioned —
-`config` and every `.meta` carry a `version` field — so that today's images stay
-readable when the format moves.
+Under active development. The on-disk format is versioned — `config` and every
+`.meta` carry a `version` field — so that today's images stay readable when the
+format moves.
 
 Licensed under the Apache License 2.0 — see [LICENSE](LICENSE).
 

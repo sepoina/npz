@@ -1,0 +1,27 @@
+A clean, side-by-side "before and after" technical illustration, split
+vertically down the middle by a thin vertical divider line.
+
+LEFT PANEL — labeled "BEFORE":
+A single large folder icon labeled "node_modules", bursting open. Pouring out
+of it and filling the entire left half is a dense, overwhelming swarm of many
+hundreds of tiny identical file icons — a chaotic cloud, edge to edge,
+suggesting an uncountable number. The swarm is rendered in muted, cold grey
+tones. Small caption beneath: "31,667 entries · 588 MiB".
+
+RIGHT PANEL — labeled "AFTER":
+Vast, calm empty space. In the exact center, one single object: a compact,
+solid rectangular block, like a sealed crystal slab or a smooth ice brick,
+faintly translucent with a cool blue glow, subtly reflective. It is small
+relative to the swarm on the left. A single thin line connects it upward to a
+small folder outline drawn in dashed strokes, suggesting the folder is still
+there but is now just a surface. Small caption beneath: "1 file · 234 MiB".
+
+STYLE: modern flat vector infographic, isometric-leaning, generous negative
+space, thin consistent line weights, no drop shadows, no skeuomorphism.
+Restrained palette: cold neutral greys for the "before" clutter, one single
+cool blue-cyan accent reserved exclusively for the "after" block. Off-white
+background. Developer-documentation aesthetic, calm and precise, in the spirit
+of Stripe or Linear documentation diagrams. The visual argument must be
+immediate: overwhelming density on the left, one quiet object on the right.
+Wide 16:9 composition. No people, no photorealism, no 3D render, no gradients
+in the background.
