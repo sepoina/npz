@@ -38,7 +38,15 @@ before:
   hooks:
     # Il guardiano. Un `before` che fallisce ferma tutto prima che esista un
     # artefatto, che è l'unico momento in cui fermarsi costa zero.
-    - ./npz_go/build/bin/coerenza.sh {{ .Version }}
+    #
+    # Si invoca con `bash` e non da sé, e non è pignoleria: questo repo si
+    # sviluppa su un disco senza permessi POSIX, dove git ha `core.filemode`
+    # a false e non vede il bit di esecuzione. Il bit nell'indice c'è — messo a
+    # mano con `git update-index --chmod=+x` — ma è una proprietà che quel disco
+    # non può confermare, e il primo rilascio è morto qui con un
+    # "permission denied". Chiamare l'interprete rende il hook indifferente al
+    # bit; per gli altri script del repo il bit resta l'unica strada.
+    - bash ./npz_go/build/bin/coerenza.sh {{ .Version }}
 
 builds:
   - id: npz
