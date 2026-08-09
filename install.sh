@@ -1,169 +1,185 @@
 #!/bin/sh
 #
-# install.sh — installa npz su qualunque distribuzione Linux.
+# install.sh — installs npz on any Linux distribution.
 #
-# Sceglie da sé il formato: il pacchetto nativo dove c'è un gestore che lo sa
-# installare, il tarball altrove. La ragione per preferire il pacchetto nativo
-# non è l'eleganza — è che `pacman -R npz` esiste e `rm /usr/local/bin/npz` va
-# ricordato a mano. Un installatore che non lascia una via di disinstallazione è
-# lo stesso difetto che `npz detach` esiste per non avere.
+# This file is in English, unlike the rest of the repository: it is the one
+# people read before piping it into a shell, and they are not the people who
+# work on npz.
 #
-# ── perché è /bin/sh e non bash ──────────────────────────────────────────────
+# It picks the format on its own: the native package wherever a package manager
+# can install it, the tarball everywhere else. The reason to prefer the native
+# package is not elegance — it is that `pacman -R npz` exists while
+# `rm /usr/local/bin/npz` has to be remembered. An installer that leaves no way
+# out has the very flaw `npz detach` exists to avoid.
 #
-# Perché è la sola cosa che si può dare per scontata su una distribuzione che
-# non si conosce: Alpine ha `ash`, un container Debian minimale non ha bash.
-# Tutto il resto del repo è bash e resta bash; questo file no, ed è l'unico.
+# ── why /bin/sh and not bash ─────────────────────────────────────────────────
 #
-# Uso:
+# Because it is the only thing you can assume on a distribution you have never
+# seen: Alpine has `ash`, a minimal Debian container has no bash at all. The
+# rest of the repository is bash and stays bash; this file is the exception.
+#
+# Usage:
 #   curl -fsSL https://github.com/sepoina/npz/releases/latest/download/install.sh | sh
-#   sh install.sh                    dopo averlo letto, che è l'abitudine migliore
+#   sh install.sh                  after reading it, which is the better habit
 #
-#   NPZ_VERSIONE=0.2.5 sh install.sh una versione precisa invece dell'ultima
-#   NPZ_METODO=tarball sh install.sh il binario in /usr/local/bin, e basta
+#   NPZ_VERSION=0.2.5 sh install.sh   a specific version instead of the latest
+#   NPZ_METHOD=tarball sh install.sh  just the binary, into /usr/local/bin
 #
 set -eu
 
-# L'indirizzo del progetto. È una copia di `URL` in `progetto.conf`, e non si
-# può evitare: questo script viene scaricato da solo, senza il repo intorno.
-# `build/bin/coerenza.sh` la controlla a ogni rilascio, che è il patto di
-# sempre — la copia non si vieta, si rende incapace di divergere in silenzio.
-PROGETTO="https://github.com/sepoina/npz" # coerenza: URL
+# Where the project lives. This is a copy of `URL` in `progetto.conf`, and it
+# cannot be avoided: this script is downloaded on its own, without the
+# repository around it. `npz_go/build/bin/coerenza.sh` checks it on every
+# release — the marker below is what ties the two together. A copy is not
+# forbidden here, it is made unable to diverge in silence.
+PROJECT="https://github.com/sepoina/npz" # coerenza: URL
 
-# Il `pkgrel`, che compare in coda ai nomi dei pacchetti. Copia anche questo, e
-# controllata dallo stesso guardiano.
-RILASCIO=1 # coerenza: RILASCIO
+# The four programs npz needs at run time. This script does not install them:
+# they belong to the distribution, and the native packages already declare them.
+# They are listed here to say what is missing while it still helps.
+NEEDED="mkfs.erofs erofsfuse fuse-overlayfs fusermount3"
 
-# I quattro programmi che npz pretende a run time. Non li installa questo
-# script: appartengono alla distribuzione, e i pacchetti nativi li dichiarano
-# già. Servono qui per dire in tempo che cosa manca.
-NECESSARI="mkfs.erofs erofsfuse fuse-overlayfs fusermount3"
-
-rosso() { printf '\033[31m%s\033[0m' "$1"; }
-verde() { printf '\033[32m%s\033[0m' "$1"; }
+red()   { printf '\033[31m%s\033[0m' "$1"; }
+green() { printf '\033[32m%s\033[0m' "$1"; }
 info()  { printf '  %s\n' "$*"; }
-muori() { printf '\n  [%s] %s\n\n' "$(rosso errore)" "$*" >&2; exit 1; }
+die()   { printf '\n  [%s] %s\n\n' "$(red error)" "$*" >&2; exit 1; }
 
-c_e() { command -v "$1" >/dev/null 2>&1; }
+have() { command -v "$1" >/dev/null 2>&1; }
 
-# ── dove siamo ───────────────────────────────────────────────────────────────
+# ── where we are ─────────────────────────────────────────────────────────────
 
-[ "$(uname -s)" = Linux ] || muori "npz gira solo su Linux: EROFS e overlayfs sono filesystem del kernel Linux."
+[ "$(uname -s)" = Linux ] || die "npz runs on Linux only: EROFS and overlayfs are Linux kernel filesystems."
 
 for t in curl tar sha256sum; do
-    c_e "$t" || muori "manca \`$t\`, che serve a questo script."
+    have "$t" || die "\`$t\` is missing, and this script needs it."
 done
 
-# Due nomi per la stessa architettura, perché i formati non si sono messi
-# d'accordo: il .deb e il tarball dicono amd64, il .rpm e l'Arch dicono x86_64.
+# Two names for the same architecture, because the formats never agreed: the
+# .deb and the tarball say amd64, the .rpm and the Arch package say x86_64.
 case "$(uname -m)" in
-    x86_64|amd64)  ARCO_DEB=amd64; ARCO_RPM=x86_64 ;;
-    aarch64|arm64) ARCO_DEB=arm64; ARCO_RPM=aarch64 ;;
-    *) muori "architettura $(uname -m) non rilasciata: restano i sorgenti, $PROGETTO" ;;
+    x86_64|amd64)  ARCH_DEB=amd64; ARCH_RPM=x86_64 ;;
+    aarch64|arm64) ARCH_DEB=arm64; ARCH_RPM=aarch64 ;;
+    *) die "no release for $(uname -m): the sources are still there, $PROJECT" ;;
 esac
 
-# ── quale versione ───────────────────────────────────────────────────────────
+# ── which version ────────────────────────────────────────────────────────────
 #
-# `releases/latest` è una redirezione verso il tag vero, e leggerla costa una
-# richiesta senza autenticazione. L'API di GitHub avrebbe detto la stessa cosa
-# in JSON, ma ha un tetto di 60 richieste all'ora per indirizzo IP: dietro il
-# NAT di un ufficio, quel tetto lo si trova già superato da qualcun altro.
-versione_ultima() {
-    curl -fsSL -o /dev/null -w '%{url_effective}' "$PROGETTO/releases/latest" \
+# `releases/latest` is a redirect to the real tag, and reading it costs one
+# unauthenticated request. GitHub's API would have said the same thing in JSON,
+# but it allows 60 requests per hour per IP address: behind an office NAT you
+# often find that budget already spent by somebody else.
+latest_version() {
+    curl -fsSL -o /dev/null -w '%{url_effective}' "$PROJECT/releases/latest" \
         | sed 's#.*/tag/v##'
 }
 
-VERSIONE="${NPZ_VERSIONE:-$(versione_ultima)}"
-[ -n "$VERSIONE" ] || muori "non riesco a capire qual è l'ultima versione. Riprova, o indica NPZ_VERSIONE=…"
-SCARICO="$PROGETTO/releases/download/v$VERSIONE"
+VERSION="${NPZ_VERSION:-$(latest_version)}"
+[ -n "$VERSION" ] || die "cannot tell which version is the latest. Try again, or pass NPZ_VERSION=…"
+DOWNLOAD="$PROJECT/releases/download/v$VERSION"
 
-printf '\033[1mnpz %s · %s\033[0m\n' "$VERSIONE" "$ARCO_DEB"
+printf '\033[1mnpz %s · %s\033[0m\n' "$VERSION" "$ARCH_DEB"
 
-# ── con che cosa si installa ─────────────────────────────────────────────────
+# ── what installs it ─────────────────────────────────────────────────────────
 #
-# L'ordine non è alfabetico: si cerca prima il gestore che *possiede* il
-# sistema. Su una Manjaro con `apt` installato per sbaglio, pacman resta la
-# risposta giusta.
-if [ -n "${NPZ_METODO:-}" ]; then
-    METODO="$NPZ_METODO"
-elif c_e pacman; then METODO=arch
-elif c_e apt-get; then METODO=deb
-elif c_e dnf || c_e zypper; then METODO=rpm
-else METODO=tarball
+# The order is not alphabetical: it looks first for the package manager that
+# *owns* the system. On a Manjaro box with `apt` installed by accident, pacman
+# is still the right answer.
+if [ -n "${NPZ_METHOD:-}" ]; then
+    METHOD="$NPZ_METHOD"
+elif have pacman; then METHOD=arch
+elif have apt-get; then METHOD=deb
+elif have dnf || have zypper; then METHOD=rpm
+else METHOD=tarball
 fi
 
-case "$METODO" in
-    arch)    FILE="npz-$VERSIONE-$RILASCIO-$ARCO_RPM.pkg.tar.zst" ;;
-    deb)     FILE="npz_$VERSIONE-${RILASCIO}_$ARCO_DEB.deb" ;;
-    rpm)     FILE="npz-$VERSIONE-$RILASCIO.$ARCO_RPM.rpm" ;;
-    tarball) FILE="npz-$VERSIONE-linux-$ARCO_DEB.tar.gz" ;;
-    *)       muori "NPZ_METODO=$METODO non esiste: usa arch, deb, rpm o tarball." ;;
+# The piece of the name that tells the right asset from the other eight — not
+# the whole name. Composing that here would mean keeping the conventions of
+# three packaging formats in mind — `npz_0.2.7-1_amd64.deb`,
+# `npz-0.2.7-1.x86_64.rpm` — and getting one of them wrong would mean a broken
+# installer, found by users rather than by us.
+case "$METHOD" in
+    arch)    PATTERN="$ARCH_RPM\.pkg\.tar\.zst$" ;;
+    deb)     PATTERN="_$ARCH_DEB\.deb$" ;;
+    rpm)     PATTERN="\.$ARCH_RPM\.rpm$" ;;
+    tarball) PATTERN="linux-$ARCH_DEB\.tar\.gz$" ;;
+    *)       die "NPZ_METHOD=$METHOD does not exist: use arch, deb, rpm or tarball." ;;
 esac
 
-# ── si scarica, si verifica, si installa ─────────────────────────────────────
+# ── download, verify, install ────────────────────────────────────────────────
 
-LAVORO=$(mktemp -d)
-# Anche sui percorsi di errore, e anche su Ctrl-C: uno script che lascia
-# spazzatura in /tmp la lascia per sempre, perché nessuno la va a cercare.
-trap 'rm -rf "$LAVORO"' EXIT INT TERM
+WORK=$(mktemp -d)
+# On error paths too, and on Ctrl-C: a script that leaves rubbish in /tmp leaves
+# it there forever, because nobody ever goes looking for it.
+trap 'rm -rf "$WORK"' EXIT INT TERM
 
-info "scarico $FILE"
-curl -fsSL --proto '=https' --tlsv1.2 -o "$LAVORO/$FILE" "$SCARICO/$FILE" \
-    || muori "non trovo $FILE fra gli allegati di v$VERSIONE."
+# `SHA256SUMS` is fetched **first**, and it does two jobs: it says what the
+# assets of this release are really called — it is the list that names them all
+# — and right after that it says whether what arrived is what was published.
+# Its name is the only one this script has to know.
+info "reading the release manifest"
+curl -fsSL --proto '=https' --tlsv1.2 -o "$WORK/SHA256SUMS" "$DOWNLOAD/SHA256SUMS" \
+    || die "v$VERSION has no SHA256SUMS: stopping, rather than installing something unverified."
 
-# La verifica non è un di più: `curl | sh` ha già chiesto fiducia una volta, e
-# questo è il punto in cui la si può smettere di chiedere. `--ignore-missing`
-# perché il SHA256SUMS copre l'intero rilascio e qui c'è un file solo.
-info "verifico la somma"
-curl -fsSL --proto '=https' --tlsv1.2 -o "$LAVORO/SHA256SUMS" "$SCARICO/SHA256SUMS" \
-    || muori "manca il SHA256SUMS del rilascio: mi fermo invece di installare qualcosa che non ho verificato."
-( cd "$LAVORO" && sha256sum -c --ignore-missing --quiet SHA256SUMS ) \
-    || muori "la somma non torna. Il file scaricato non è quello pubblicato: non lo installo."
+FILE=$(awk '{print $2}' "$WORK/SHA256SUMS" | sed 's|^\*||' | grep -E "$PATTERN" | head -n 1)
+[ -n "$FILE" ] || die "v$VERSION has no $METHOD asset for $(uname -m). Try NPZ_METHOD=tarball."
 
-# Il sudo si nomina prima di usarlo, così chi legge sa che cosa sta per
-# succedere; se manca, si dice invece di fallire dentro un comando altrui.
+info "downloading $FILE"
+curl -fsSL --proto '=https' --tlsv1.2 -o "$WORK/$FILE" "$DOWNLOAD/$FILE" \
+    || die "cannot download $FILE."
+
+# `--ignore-missing` because SHA256SUMS covers the whole release and only one
+# file is here. The check is not a nicety: `curl | sh` already asked you to
+# trust it once, and this is the point where it can stop asking.
+info "verifying the checksum"
+( cd "$WORK" && sha256sum -c --ignore-missing --quiet SHA256SUMS ) \
+    || die "checksum mismatch. What was downloaded is not what was published: not installing it."
+
+# sudo is named before it is used, so whoever is reading knows what is about to
+# happen; if it is missing, say so instead of failing inside somebody else's
+# command.
 SUDO=""
 if [ "$(id -u)" -ne 0 ]; then
-    c_e sudo || muori "servono i privilegi di root e \`sudo\` non c'è. Rilancialo da root, o usa NPZ_METODO=tarball."
+    have sudo || die "root privileges are needed and \`sudo\` is not here. Run it as root, or use NPZ_METHOD=tarball."
     SUDO=sudo
 fi
 
-case "$METODO" in
-    arch) info "pacman -U"; $SUDO pacman -U --noconfirm "$LAVORO/$FILE" ;;
-    # `apt install ./file` e non `dpkg -i`: apt risolve le dipendenze, dpkg si
-    # limita a lamentarsene lasciando il pacchetto mezzo installato.
-    deb)  info "apt install"; $SUDO apt-get install -y "$LAVORO/$FILE" ;;
-    rpm)  if c_e dnf; then info "dnf install"; $SUDO dnf install -y "$LAVORO/$FILE"
-          else info "zypper install"; $SUDO zypper --non-interactive install --allow-unsigned-rpm "$LAVORO/$FILE"; fi ;;
+case "$METHOD" in
+    arch) info "pacman -U"; $SUDO pacman -U --noconfirm "$WORK/$FILE" ;;
+    # `apt install ./file` and not `dpkg -i`: apt resolves the dependencies,
+    # dpkg merely complains about them and leaves the package half installed.
+    deb)  info "apt install"; $SUDO apt-get install -y "$WORK/$FILE" ;;
+    rpm)  if have dnf; then info "dnf install"; $SUDO dnf install -y "$WORK/$FILE"
+          else info "zypper install"; $SUDO zypper --non-interactive install --allow-unsigned-rpm "$WORK/$FILE"; fi ;;
     tarball)
-        tar xzf "$LAVORO/$FILE" -C "$LAVORO" npz
-        DOVE=/usr/local/bin
-        info "install in $DOVE"
-        $SUDO install -m 0755 "$LAVORO/npz" "$DOVE/npz"
-        info "per toglierlo: $SUDO rm $DOVE/npz" ;;
+        tar xzf "$WORK/$FILE" -C "$WORK" npz
+        WHERE=/usr/local/bin
+        info "installing into $WHERE"
+        $SUDO install -m 0755 "$WORK/npz" "$WHERE/npz"
+        info "to remove it: $SUDO rm $WHERE/npz" ;;
 esac
 
-# ── che cosa manca ancora ────────────────────────────────────────────────────
+# ── what is still missing ────────────────────────────────────────────────────
 
-printf '\n  [%s] npz %s installato.\n' "$(verde ok)" "$VERSIONE"
+printf '\n  [%s] npz %s installed.\n' "$(green ok)" "$VERSION"
 
-MANCANTI=""
-for t in $NECESSARI; do
-    c_e "$t" || MANCANTI="$MANCANTI $t"
+MISSING=""
+for t in $NEEDED; do
+    have "$t" || MISSING="$MISSING $t"
 done
 
-if [ -n "$MANCANTI" ]; then
-    printf '\n  [%s] manca ancora:%s\n' "$(rosso attenzione)" "$MANCANTI"
-    info "npz li usa per costruire e montare l'immagine, e senza non parte."
-    if c_e pacman; then      info "sudo pacman -S erofs-utils erofsfuse fuse-overlayfs fuse3"
-    elif c_e apt-get; then   info "sudo apt install erofs-utils fuse-overlayfs fuse3"
-    elif c_e dnf; then       info "sudo dnf install erofs-utils fuse-overlayfs fuse3"
-    elif c_e zypper; then    info "sudo zypper install erofs-utils fuse-overlayfs fuse3"
+if [ -n "$MISSING" ]; then
+    printf '\n  [%s] still missing:%s\n' "$(red warning)" "$MISSING"
+    info "npz uses these to build and mount the image, and will not run without them."
+    if have pacman; then      info "sudo pacman -S erofs-utils erofsfuse fuse-overlayfs fuse3"
+    elif have apt-get; then   info "sudo apt install erofs-utils fuse-overlayfs fuse3"
+    elif have dnf; then       info "sudo dnf install erofs-utils fuse-overlayfs fuse3"
+    elif have zypper; then    info "sudo zypper install erofs-utils fuse-overlayfs fuse3"
     fi
-    # `erofsfuse` è pacchetto a sé solo su Arch, dove la riga qui sopra lo
-    # nomina già. Altrove non è stato verificato contro i repo, e promettere un
-    # nome che non esiste sarebbe peggio che tacerlo.
-    info "su alcune distribuzioni erofsfuse ha un pacchetto proprio, o non c'è affatto."
+    # `erofsfuse` is a package of its own only on Arch, where the line above
+    # already names it. Elsewhere it was never checked against the repositories,
+    # and promising a package name that does not exist is worse than silence.
+    info "on some distributions erofsfuse is a separate package, or missing entirely."
 fi
 
-printf '\n  Per cominciare, dentro un progetto:  npz install\n'
-printf '  La via d'\''uscita, in qualunque momento:  npz detach\n\n'
+printf '\n  To start, inside a project:  npz install\n'
+printf '  The way out, at any time:    npz detach\n\n'

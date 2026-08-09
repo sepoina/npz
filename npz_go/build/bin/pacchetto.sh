@@ -61,6 +61,13 @@ _ver_ambiente="${VERSIONE:-}"
 . "$RADICE/progetto.conf" || { echo "manca $RADICE/progetto.conf" >&2; exit 1; }
 [ -n "$_ver_ambiente" ] && VERSIONE="$_ver_ambiente"
 
+# Il `pkgrel`, e sta qui perche' e' un dettaglio dei formati che impacchettano —
+# non l'identita' di npz, che e' quel che `progetto.conf` custodisce. Fisso a 1
+# per scelta: quando cambia l'impacchettamento si bumpa `VERSIONE`, che produce
+# un rilascio vero, invece di un numero che solo i pacchetti vedono. Il perche'
+# per esteso sta in `progetto.conf`, dove questa variabile viveva.
+RILASCIO=1
+
 verde() { printf '\033[32m%s\033[0m' "$1"; }
 rosso() { printf '\033[31m%s\033[0m' "$1"; }
 sez()   { printf '\n\033[1m── %s ──\033[0m\n' "$*"; }

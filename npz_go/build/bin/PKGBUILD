@@ -46,7 +46,9 @@
 # alla lettera quando genera la versione per AUR. Non scrivere valori qui.
 pkgname="$NOME"
 pkgver="$VERSIONE"
-pkgrel="$RILASCIO"
+# Fisso, e non da progetto.conf: il `pkgrel` e' un dettaglio del formato Arch, e
+# quando cambia l'impacchettamento questo progetto bumpa `VERSIONE`.
+pkgrel=1
 pkgdesc="$DESCRIZIONE_BREVE"
 url="$URL"
 license=("$LICENZA")

@@ -101,16 +101,16 @@ nfpms:
     maintainer: "{{ .Env.MANUTENTORE }}"
     homepage: "{{ .Env.URL }}"
     license: "{{ .Env.LICENZA }}"
-    # Il numero di revisione del *pacchetto*, non del programma: il `pkgrel` di
-    # Arch, e il `-1` che compare in coda ai nomi di .deb e .rpm.
+    # Il `pkgrel`: il numero di revisione del *pacchetto*, e il `-1` che compare
+    # in coda ai nomi di .deb e .rpm.
     #
-    # **Scritto a mano, e non `{{ .Env.RILASCIO }}`**, perché questo campo non è
-    # templato: GoReleaser lo passa a nfpm tale e quale, nfpm lo ripulisce dei
-    # caratteri che un nome di file non ammette, e la 0.2.6 è uscita con dei
-    # pacchetti chiamati `npz_0.2.6-.Env.RILASCIO._amd64.deb`. Non fallisce
-    # niente: si scopre guardando gli allegati. Seconda copia, quindi, e come
-    # per le dipendenze la tiene onesta `build/bin/coerenza.sh`.
-    release: 1 # coerenza: RILASCIO
+    # **Fisso, e per scelta.** Era una variabile di `progetto.conf` e non lo è
+    # più: quando cambia l'impacchettamento questo progetto bumpa `VERSIONE`,
+    # che è l'unico gesto che produce davvero un rilascio — la sentinella è il
+    # tag `v<versione>`, quindi un `RILASCIO` diverso non faceva uscire niente.
+    # Ci si era anche scottati: `release:` non è un campo templato, e la 0.2.6 è
+    # uscita con dei pacchetti chiamati `npz_0.2.6-.Env.RILASCIO._amd64.deb`.
+    release: 1
     section: devel
     priority: optional
     bindir: /usr/bin
@@ -158,18 +158,19 @@ snapshot:
 
 release:
   name_template: "npz {{ .Version }}"
-  # Le istruzioni di installazione, in inglese come il README, e con la versione
-  # e la base dell'url presi da `progetto.conf` per l'ambiente: qui non si
-  # scrive un numero a mano, che è la regola di tutto il resto del progetto.
-  #
-  # `arm64` non compare nei comandi ma nei nomi dei file allegati sì: chi sta su
-  # arm lo sa, e raddoppiare ogni riga per dirlo renderebbe illeggibile la parte
-  # che serve a tutti gli altri.
   # `install.sh` viaggia con ogni rilascio, e non solo nel repo: è ciò che rende
   # stabile l'indirizzo `releases/latest/download/install.sh`, quello che le
   # istruzioni qui sotto danno per primo.
   extra_files:
     - glob: install.sh
+
+  # Le istruzioni di installazione, in inglese come il README. Versione e url
+  # vengono dal tag e dall'ambiente; il `-1` dei nomi è il `pkgrel` fisso, lo
+  # stesso scritto sopra in `release:`.
+  #
+  # `arm64` non compare nei comandi ma nei nomi dei file allegati sì: chi sta su
+  # arm lo sa, e raddoppiare ogni riga per dirlo renderebbe illeggibile la parte
+  # che serve a tutti gli altri.
 
   footer: |
     ## Install
@@ -200,15 +201,15 @@ release:
     **Arch, Manjaro**
 
     ```bash
-    curl -LO {{ .Env.URL }}/npz/releases/download/{{ .Tag }}/npz-{{ .Version }}-{{ .Env.RILASCIO }}-x86_64.pkg.tar.zst
-    sudo pacman -U npz-{{ .Version }}-{{ .Env.RILASCIO }}-x86_64.pkg.tar.zst
+    curl -LO {{ .Env.URL }}/npz/releases/download/{{ .Tag }}/npz-{{ .Version }}-1-x86_64.pkg.tar.zst
+    sudo pacman -U npz-{{ .Version }}-1-x86_64.pkg.tar.zst
     ```
 
     **Debian, Ubuntu**
 
     ```bash
-    curl -LO {{ .Env.URL }}/npz/releases/download/{{ .Tag }}/npz_{{ .Version }}-{{ .Env.RILASCIO }}_amd64.deb
-    sudo apt install ./npz_{{ .Version }}-{{ .Env.RILASCIO }}_amd64.deb
+    curl -LO {{ .Env.URL }}/npz/releases/download/{{ .Tag }}/npz_{{ .Version }}-1_amd64.deb
+    sudo apt install ./npz_{{ .Version }}-1_amd64.deb
     ```
 
     `erofsfuse` is not among the declared dependencies on Debian and Fedora,
@@ -219,8 +220,8 @@ release:
     **Fedora, RHEL, openSUSE**
 
     ```bash
-    curl -LO {{ .Env.URL }}/npz/releases/download/{{ .Tag }}/npz-{{ .Version }}-{{ .Env.RILASCIO }}.x86_64.rpm
-    sudo dnf install ./npz-{{ .Version }}-{{ .Env.RILASCIO }}.x86_64.rpm
+    curl -LO {{ .Env.URL }}/npz/releases/download/{{ .Tag }}/npz-{{ .Version }}-1.x86_64.rpm
+    sudo dnf install ./npz-{{ .Version }}-1.x86_64.rpm
     ```
 
     **Any Linux, no package manager**

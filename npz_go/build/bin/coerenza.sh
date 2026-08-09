@@ -108,15 +108,12 @@ confronta DIP_ARCH   "$DIP_ARCH"
 # ── i valori singoli ─────────────────────────────────────────────────────────
 #
 # Stesso marcatore, ma in coda alla riga invece che sopra un elenco. Si estrae
-# quel che sta fra il primo `=` o `:` e il commento: regge tanto la riga di
-# shell `RILASCIO=1` quanto quella YAML `release: 1`.
+# quel che sta fra il primo `=` o `:` e il commento, quindi regge tanto una riga
+# di shell quanto una riga YAML.
 #
-# Due copie, e nessuna delle due era evitabile:
-#
-#   · `release:` in `.goreleaser.yaml` non è un campo templato — la 0.2.6 è
-#     uscita con dei pacchetti chiamati `.Env.RILASCIO` per averlo creduto.
-#   · `install.sh` viene scaricato **da solo**, senza il repo intorno, quindi
-#     l'indirizzo del progetto e il numero di revisione deve portarseli scritti.
+# Ne resta uno solo: `install.sh` viene scaricato **da solo**, senza il repo
+# intorno, quindi l'indirizzo del progetto deve portarselo scritto. Tutto il
+# resto lo ricava a run time dal `SHA256SUMS` del rilascio.
 scalare() {
     local file="$1" nome="$2" atteso="$3" trovato
     trovato=$(awk -v marca="# coerenza: $2" '
@@ -142,8 +139,6 @@ scalare() {
     printf '  [%s] %-12s %s\n' "$(verde ok)" "$nome" "$trovato"
 }
 
-scalare "$YAML" RILASCIO "$RILASCIO"
-scalare "$RADICE/install.sh" RILASCIO "$RILASCIO"
 # `install.sh` nomina il repo, `progetto.conf` nomina il proprietario: il pezzo
 # in mezzo è il nome del progetto, che è già in `NOME`.
 scalare "$RADICE/install.sh" URL "$URL/$NOME"

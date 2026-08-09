@@ -79,7 +79,6 @@ jobs:
           # `.goreleaser.yaml` ha un valore, e ne ha uno solo.
           {
             echo "VERSIONE=$VERSIONE"
-            echo "RILASCIO=$RILASCIO"
             echo "MANUTENTORE=$MANUTENTORE"
             echo "URL=$URL"
             echo "LICENZA=$LICENZA"
