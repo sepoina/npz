@@ -26,6 +26,18 @@ exactly as before. Traversal tools that stop at a filesystem boundary (`du -x`,
 knowing anything about `npz`**: as a mount point, the folder is *more*
 excludable than it was as a directory.
 
+## Install
+
+```bash
+curl -fsSL https://github.com/sepoina/npz/releases/latest/download/install.sh | sh
+```
+
+It picks the native package where a package manager exists — so that removing
+npz later is `pacman -R` and not `rm` — and installs the static binary where
+none does. It verifies every download against `SHA256SUMS`. Reading it before
+running it is the better habit, and the [release page](https://github.com/sepoina/npz/releases/latest)
+also carries the per-distribution commands.
+
 ## Quick start
 
 ```bash

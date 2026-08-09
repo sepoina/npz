@@ -103,7 +103,14 @@ nfpms:
     license: "{{ .Env.LICENZA }}"
     # Il numero di revisione del *pacchetto*, non del programma: il `pkgrel` di
     # Arch, e il `-1` che compare in coda ai nomi di .deb e .rpm.
-    release: "{{ .Env.RILASCIO }}"
+    #
+    # **Scritto a mano, e non `{{ .Env.RILASCIO }}`**, perché questo campo non è
+    # templato: GoReleaser lo passa a nfpm tale e quale, nfpm lo ripulisce dei
+    # caratteri che un nome di file non ammette, e la 0.2.6 è uscita con dei
+    # pacchetti chiamati `npz_0.2.6-.Env.RILASCIO._amd64.deb`. Non fallisce
+    # niente: si scopre guardando gli allegati. Seconda copia, quindi, e come
+    # per le dipendenze la tiene onesta `build/bin/coerenza.sh`.
+    release: 1 # coerenza: RILASCIO
     section: devel
     priority: optional
     bindir: /usr/bin
@@ -158,8 +165,35 @@ release:
   # `arm64` non compare nei comandi ma nei nomi dei file allegati sì: chi sta su
   # arm lo sa, e raddoppiare ogni riga per dirlo renderebbe illeggibile la parte
   # che serve a tutti gli altri.
+  # `install.sh` viaggia con ogni rilascio, e non solo nel repo: è ciò che rende
+  # stabile l'indirizzo `releases/latest/download/install.sh`, quello che le
+  # istruzioni qui sotto danno per primo.
+  extra_files:
+    - glob: install.sh
+
   footer: |
     ## Install
+
+    One line, any distribution — it picks the native package where there is a
+    package manager that can uninstall it later, and falls back to the binary
+    where there isn't:
+
+    ```bash
+    curl -fsSL {{ .Env.URL }}/npz/releases/latest/download/install.sh | sh
+    ```
+
+    Piping a script into a shell asks you to trust it before reading it. If you
+    would rather not, that is the better habit:
+
+    ```bash
+    curl -fsSLO {{ .Env.URL }}/npz/releases/latest/download/install.sh
+    less install.sh && sh install.sh
+    ```
+
+    Either way the script verifies what it downloads against `SHA256SUMS` and
+    refuses to install anything whose checksum does not match.
+
+    ## Install by hand
 
     Replace `amd64`/`x86_64` with `arm64`/`aarch64` if that is your machine.
 

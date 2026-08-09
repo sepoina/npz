@@ -105,6 +105,49 @@ confronta DIP_DEBIAN "$DIP_DEBIAN"
 confronta DIP_RPM    "$DIP_RPM"
 confronta DIP_ARCH   "$DIP_ARCH"
 
+# ── i valori singoli ─────────────────────────────────────────────────────────
+#
+# Stesso marcatore, ma in coda alla riga invece che sopra un elenco. Si estrae
+# quel che sta fra il primo `=` o `:` e il commento: regge tanto la riga di
+# shell `RILASCIO=1` quanto quella YAML `release: 1`.
+#
+# Due copie, e nessuna delle due era evitabile:
+#
+#   · `release:` in `.goreleaser.yaml` non è un campo templato — la 0.2.6 è
+#     uscita con dei pacchetti chiamati `.Env.RILASCIO` per averlo creduto.
+#   · `install.sh` viene scaricato **da solo**, senza il repo intorno, quindi
+#     l'indirizzo del progetto e il numero di revisione deve portarseli scritti.
+scalare() {
+    local file="$1" nome="$2" atteso="$3" trovato
+    trovato=$(awk -v marca="# coerenza: $2" '
+        index($0, marca) {
+            sub(/#.*/, "")                      # via il commento
+            sub(/^[^=:]*[=:][[:space:]]*/, "")  # via il nome e il separatore
+            gsub(/^["'"'"']|["'"'"'][[:space:]]*$|[[:space:]]+$/, "")
+            print; exit
+        }' "$file")
+
+    if [ -z "$trovato" ]; then
+        printf '  [%s] %s: nessuna riga marcata `# coerenza: %s` in %s\n' \
+            "$(rosso FAIL)" "$nome" "$nome" "$(basename "$file")"
+        GUASTI=$((GUASTI+1))
+        return
+    fi
+    if [ "$trovato" != "$atteso" ]; then
+        printf '  [%s] %s in %s dice «%s», progetto.conf dice «%s»\n' \
+            "$(rosso FAIL)" "$nome" "$(basename "$file")" "$trovato" "$atteso"
+        GUASTI=$((GUASTI+1))
+        return
+    fi
+    printf '  [%s] %-12s %s\n' "$(verde ok)" "$nome" "$trovato"
+}
+
+scalare "$YAML" RILASCIO "$RILASCIO"
+scalare "$RADICE/install.sh" RILASCIO "$RILASCIO"
+# `install.sh` nomina il repo, `progetto.conf` nomina il proprietario: il pezzo
+# in mezzo è il nome del progetto, che è già in `NOME`.
+scalare "$RADICE/install.sh" URL "$URL/$NOME"
+
 if [ "$GUASTI" -ne 0 ]; then
     printf '\n  %s: il rilascio si ferma qui.\n' "$(rosso "$GUASTI problemi")"
     printf '  La fonte è progetto.conf: si allinea il YAML, mai il contrario.\n\n'
