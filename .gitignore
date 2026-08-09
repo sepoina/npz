@@ -46,6 +46,15 @@ venv/
 *.out
 *.prof
 
+# ── GoReleaser ───────────────────────────────────────────────────────────────
+#
+# GoReleaser lavora in una `dist/` nella radice, e non va confusa con
+# `npz_go/dist/`, che è di `pacchetto.sh`: sono due attrezzi che producono gli
+# stessi formati, e tenerne separati i prodotti è ciò che permette di
+# confrontarli invece di sovrascriverli. `--clean` la svuota a ogni giro, quindi
+# quel che ci sta dentro non sopravvive nemmeno al rilascio successivo.
+/dist/
+
 # ── editor e sistema ─────────────────────────────────────────────────────────
 #
 # Questo albero vive su un disco condiviso, quindi la lista tiene dentro anche

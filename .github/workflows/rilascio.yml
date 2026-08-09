@@ -1,0 +1,133 @@
+# rilascio.yml — un rilascio ogni volta che cambia il numero di versione.
+#
+# Il gesto che rilascia è uno solo: cambiare `VERSIONE` in `progetto.conf` e
+# fare push su `main`. Non c'è un tag da creare a mano, e non c'è un bottone da
+# premere — perché il momento in cui si bumpa la versione e il momento in cui ci
+# si ricorda di pubblicare sono due, e fra i due si perde un rilascio. È lo
+# stesso ragionamento per cui `build.sh` chiama `pacchetto.sh` da sé.
+#
+# ── chi fa che cosa ──────────────────────────────────────────────────────────
+#
+# `progetto.conf` dice **chi è npz**: versione, manutentore, descrizioni,
+# licenza, dipendenze. `.goreleaser.yaml` dice **come si impacchetta**. Questo
+# workflow è la cerniera fra i due: legge il conf, ne esporta i campi
+# nell'ambiente, e GoReleaser li ritrova come `{{ .Env.… }}` senza che nessun
+# metadato sia scritto due volte.
+#
+# ── che cosa fa da sentinella ────────────────────────────────────────────────
+#
+# **Il tag `v<versione>`**, non il diff col commit precedente. Il diff risponde
+# alla domanda sbagliata: dice se *questo* push ha toccato la riga, quindi
+# rilascerebbe due volte dopo un revert, e non rilascerebbe affatto se il bump
+# arrivasse dentro un merge o se il push venisse rifatto. Il tag risponde alla
+# domanda giusta — «questa versione è già uscita?» — ed è la stessa forma di
+# sentinella che `build.sh` usa con `dist/SHA256SUMS`: uno stato che esiste per
+# conto proprio e che non può mentire.
+#
+# Il tag serve anche a GoReleaser, che il numero di versione lo prende da lì e
+# **da nessun file**. Lo creiamo noi, da `progetto.conf`, e la direzione resta
+# una sola: conf → tag → pacchetti. Corollario: per rifare un rilascio si
+# cancella il suo tag, in locale e sul remoto, e il push successivo lo rifà.
+
+name: rilascio
+
+on:
+  push:
+    branches: [main]
+
+# Il workflow scrive tag e release, e per farlo il GITHUB_TOKEN deve poter
+# scrivere nel repo: per difetto è in sola lettura.
+permissions:
+  contents: write
+
+# Due push ravvicinati costruirebbero la stessa versione due volte, e il secondo
+# troverebbe il tag del primo a metà strada. Si accodano invece di correre.
+concurrency:
+  group: rilascio
+  cancel-in-progress: false
+
+jobs:
+  rilascio:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # I tag servono al passo che decide: senza, `git rev-parse` non
+          # troverebbe mai niente e ogni push rilascerebbe di nuovo. Servono
+          # anche a GoReleaser, che dal tag precedente ricava il changelog.
+          fetch-depth: 0
+
+      - name: la versione, e se è già uscita
+        id: versione
+        run: |
+          set -euo pipefail
+          # La fonte di verità, letta come la leggono build.sh e pacchetto.sh:
+          # `progetto.conf` è shell proprio perché si legga con un punto.
+          . ./progetto.conf
+
+          echo "numero=$VERSIONE" >> "$GITHUB_OUTPUT"
+          if git rev-parse -q --verify "refs/tags/v$VERSIONE" >/dev/null; then
+            echo "  v$VERSIONE ha già il suo tag: niente da rilasciare."
+            echo "serve=no" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "  v$VERSIONE non esiste ancora: si rilascia."
+          echo "serve=si" >> "$GITHUB_OUTPUT"
+
+          # I metadati passano a GoReleaser per l'ambiente, che è il solo modo
+          # di non riscriverli nel YAML. Da qui in poi ogni `{{ .Env.X }}` di
+          # `.goreleaser.yaml` ha un valore, e ne ha uno solo.
+          {
+            echo "VERSIONE=$VERSIONE"
+            echo "RILASCIO=$RILASCIO"
+            echo "MANUTENTORE=$MANUTENTORE"
+            echo "URL=$URL"
+            echo "LICENZA=$LICENZA"
+            echo "DESCRIZIONE_BREVE=$DESCRIZIONE_BREVE"
+            # Multi-riga: `$GITHUB_ENV` vuole un delimitatore, e il valore non
+            # deve contenerlo. `FINE_DESCRIZIONE` non compare in nessuna prosa.
+            echo "DESCRIZIONE_LUNGA<<FINE_DESCRIZIONE"
+            printf '%s\n' "$DESCRIZIONE_LUNGA"
+            echo "FINE_DESCRIZIONE"
+          } >> "$GITHUB_ENV"
+
+      - uses: actions/setup-go@v5
+        if: steps.versione.outputs.serve == 'si'
+        with:
+          # Dal go.mod, non da un numero scritto qui: la versione di Go è già
+          # dichiarata in un posto, e due posti divergono.
+          go-version-file: npz_go/go.mod
+          # npz non ha dipendenze e quindi non ha un `go.sum`: senza questa riga
+          # setup-go cerca quel file per la cache e fallisce il passo.
+          cache: false
+
+      - name: il tag
+        if: steps.versione.outputs.serve == 'si'
+        env:
+          VER: ${{ steps.versione.outputs.numero }}
+        run: |
+          set -euo pipefail
+          # Annotato e non leggero: GoReleaser legge il messaggio del tag, e un
+          # tag leggero lo lascerebbe senza. L'autore è il bot delle Actions,
+          # perché è chi ha davvero fatto il gesto.
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "v$VER" -m "npz $VER"
+          # Il tag si spinge **prima** di GoReleaser, non dopo: se il rilascio
+          # fallisce a metà, il tag rimasto è ciò che impedisce a un secondo
+          # tentativo di ripartire da zero senza che nessuno se ne accorga. Per
+          # rifarlo davvero lo si cancella a mano, che è una decisione, non un
+          # effetto collaterale.
+          git push origin "v$VER"
+
+      - name: GoReleaser
+        if: steps.versione.outputs.serve == 'si'
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          version: "~> v2"
+          # `--clean` svuota `dist/` prima di cominciare: è ciò che garantisce
+          # che quel che si pubblica sia di una versione sola. Stessa regola di
+          # `svuota_dist` in pacchetto.sh, e per lo stesso motivo.
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ github.token }}

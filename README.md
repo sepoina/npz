@@ -79,6 +79,10 @@ Version, descriptions, maintainer, license and dependencies all live in
 touches that file and nothing more. Two implementations share it — `npz_go/`,
 the one that gets built and packaged, and `npz_python/`.
 
+Bumping `VERSIONE` there and pushing to `main` is the whole release procedure:
+CI tags it, and GoReleaser publishes the binaries, the `.deb`, `.rpm` and Arch
+packages, and a `SHA256SUMS` that covers them.
+
 ## Documentation
 
 It all lives in **[doc/](doc/)**, indexed by

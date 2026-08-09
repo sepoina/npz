@@ -1,0 +1,155 @@
+# .goreleaser.yaml — come si impacchetta npz per il rilascio.
+#
+# ── che cosa è questo file, e che cosa non è ─────────────────────────────────
+#
+# **Non è la fonte di verità.** Quella resta `progetto.conf`, e qui dentro non
+# si dichiara nessun metadato: manutentore, descrizioni, url e licenza si
+# leggono dall'ambiente con `{{ .Env.… }}`, e chi lancia GoReleaser fa prima un
+# `. progetto.conf` — il workflow lo fa da sé. Questo file dice *come* si
+# impacchetta, non *chi* è npz.
+#
+# Fanno eccezione due cose, e vale la pena sapere perché:
+#
+#   · **la versione**, che GoReleaser prende dal tag git e da nessun altro
+#     posto. Il tag però lo crea il workflow leggendo `progetto.conf`, quindi
+#     la direzione resta una sola: conf → tag → pacchetti.
+#   · **le tre liste di dipendenze**, che nfpm vuole come elenchi YAML e che un
+#     `{{ .Env.DIP_RPM }}` ridurrebbe a un `Requires` solo con dentro tre nomi
+#     separati da spazi — un pacchetto inesistente, in un rilascio che sembra
+#     riuscito. Sono l'unica copia rimasta, e `build/bin/coerenza.sh` la tiene
+#     onesta: gira fra i `before.hooks` qui sotto e ferma il rilascio se le due
+#     versioni divergono. Il marcatore `# coerenza: NOME` sopra ogni elenco è
+#     ciò che lo aggancia alla variabile di `progetto.conf`.
+#
+# ── e `build/bin/pacchetto.sh`? ──────────────────────────────────────────────
+#
+# Resta, e non è un doppione dimenticato. GoReleaser costruisce i pacchetti;
+# `pacchetto.sh` li costruisce **e li interroga con gli strumenti veri** —
+# `pacman -Qip` su una Arch, `rpm -qp`, e l'`oracolo` che confronta il .deb
+# scritto a mano con quello di nfpm. Da oggi quel confronto ha un secondo uso:
+# nfpm è il motore di GoReleaser, quindi `pacchetto.sh oracolo` è diventato il
+# modo di verificare *questo* file da una macchina di sviluppo.
+#
+version: 2
+
+project_name: npz
+
+before:
+  hooks:
+    # Il guardiano. Un `before` che fallisce ferma tutto prima che esista un
+    # artefatto, che è l'unico momento in cui fermarsi costa zero.
+    - ./npz_go/build/bin/coerenza.sh {{ .Version }}
+
+builds:
+  - id: npz
+    # Il modulo Go sta un livello sotto la radice, perché `progetto.conf` è
+    # condiviso con l'implementazione Python e deve stare sopra entrambe.
+    dir: npz_go
+    main: .
+    binary: npz
+    env:
+      # Le tre opzioni che non sono preferenze — il ragionamento per esteso sta
+      # in `build/build.sh`. Questa è la prima: senza libc il binario gira su
+      # qualunque Linux, ed è l'intera ragione per cui npz è scritto in Go.
+      - CGO_ENABLED=0
+    goos: [linux]
+    goarch: [amd64, arm64]
+    flags:
+      # Via i percorsi assoluti della macchina che compila.
+      - -trimpath
+    ldflags:
+      # Via tabella dei simboli e DWARF: ~25% in meno, e a chi usa npz non
+      # servono.
+      - -s -w
+      # I due simboli si marchiano **insieme e dalla stessa fonte**, sempre: è
+      # ciò che rende impossibile che la versione stampata da `npz` e quella
+      # scritta nel `creata_da` di uno store si contraddicano.
+      - -X npz/internal/facciata.Versione={{ .Version }}
+      - -X npz/internal/nucleo.Versione={{ .Version }}
+    # Riproducibilità: due giri sullo stesso commit danno lo stesso binario.
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+archives:
+  - id: tarball
+    formats: [tar.gz]
+    # Lo stesso nome che i tarball hanno sempre avuto: chi ha uno script che
+    # scarica l'ultimo npz non deve accorgersi del cambio di attrezzo.
+    name_template: "{{ .ProjectName }}-{{ .Version }}-linux-{{ .Arch }}"
+    # Il binario sta in cima all'archivio, non dentro una cartella: si scompatta
+    # dove serve e si sposta in $PATH senza un livello da attraversare.
+    wrap_in_directory: false
+    files:
+      - LICENSE
+      - README.md
+
+nfpms:
+  - id: pacchetti
+    package_name: "{{ .ProjectName }}"
+    # L'Arch esce da qui **senza makepkg**, che su un runner Ubuntu non c'è: è
+    # il buco che questo file chiude. Resta vero che il pacchetto provato con
+    # pacman vero è quello di `pacchetto.sh arch`, costruito su una Arch.
+    formats: [deb, rpm, archlinux]
+    file_name_template: "{{ .ConventionalFileName }}"
+    maintainer: "{{ .Env.MANUTENTORE }}"
+    homepage: "{{ .Env.URL }}"
+    license: "{{ .Env.LICENZA }}"
+    # Il numero di revisione del *pacchetto*, non del programma: il `pkgrel` di
+    # Arch, e il `-1` che compare in coda ai nomi di .deb e .rpm.
+    release: "{{ .Env.RILASCIO }}"
+    section: devel
+    priority: optional
+    bindir: /usr/bin
+    # Prima riga corta e resto lungo: è il campo `Description:` di Debian, e la
+    # riga vuota in mezzo la traduce nfpm nel punto solo che il formato vuole.
+    description: |-
+      {{ .Env.DESCRIZIONE_BREVE }}
+
+      {{ .Env.DESCRIZIONE_LUNGA }}
+    contents:
+      # Debian *esige* un copyright per pacchetto: senza, il pacchetto si
+      # installa ma è fuori norma. Ora che il progetto ha una licenza vera, è
+      # quella a finirci — prima era un segnaposto che diceva di non saperlo.
+      - src: LICENSE
+        dst: /usr/share/doc/npz/copyright
+    overrides:
+      deb:
+        dependencies: # coerenza: DIP_DEBIAN
+          - erofs-utils
+          - fuse-overlayfs
+          - fuse3
+      rpm:
+        dependencies: # coerenza: DIP_RPM
+          - erofs-utils
+          - fuse-overlayfs
+          - fuse3
+      archlinux:
+        dependencies: # coerenza: DIP_ARCH
+          - erofs-utils
+          - erofsfuse
+          - fuse-overlayfs
+          - fuse3
+
+checksum:
+  # Lo stesso nome e lo stesso formato di prima, per la stessa ragione di prima:
+  # chi scarica verifica con `sha256sum -c SHA256SUMS`, cioè con l'attrezzo che
+  # ha già.
+  name_template: SHA256SUMS
+  algorithm: sha256
+
+snapshot:
+  # Per provare il rilascio senza tag e senza pubblicare niente:
+  #   . ./progetto.conf && goreleaser release --snapshot --clean
+  version_template: "{{ .Env.VERSIONE }}-prova"
+
+release:
+  name_template: "npz {{ .Version }}"
+  footer: |
+    Verifica di quel che hai scaricato:
+
+    ```bash
+    sha256sum -c SHA256SUMS
+    ```
+
+    Il pacchetto per Arch e Manjaro allegato qui è costruito con nfpm. Quello
+    provato con `pacman` vero si costruisce dal sorgente con
+    `npz_go/build/bin/pacchetto.sh arch`.
