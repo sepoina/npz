@@ -112,8 +112,10 @@ cd npz_go/build && ./build.sh        # npz for this machine, into build/lavoro/
 
 Version, descriptions, maintainer, license and dependencies all live in
 [progetto.conf](progetto.conf) and **nowhere else**: whoever cuts a release
-touches that file and nothing more. Two implementations share it — `npz_go/`,
-the one that gets built and packaged, and `npz_python/`.
+touches that file and nothing more. The Go implementation reads it at link
+time, via `-ldflags` in `build.sh`; the Python implementation — archived at
+0.2.7 in [archive/npz_python-0.2.7.tar.gz](archive/npz_python-0.2.7.tar.gz) —
+read it lazily at runtime.
 
 Bumping `VERSIONE` there and pushing to `main` is the whole release procedure:
 CI tags it, and GoReleaser publishes the binaries, the `.deb`, `.rpm` and Arch
@@ -124,7 +126,9 @@ packages, and a `SHA256SUMS` that covers them.
 It all lives in **[doc/](doc/)**, indexed by [doc/_index.md](doc/_index.md). In
 a hurry, read [the travel journal](<doc/taccuino di viaggio.md>): the
 measurements that dismantled, one after another, the ideas the project was born
-from. It is written in Italian; this README is the English entry point.
+from. It is written in Italian; this README is the English entry point. The
+previous Python implementation, version 0.2.7, is preserved as a snapshot in
+[archive/npz_python-0.2.7.tar.gz](archive/npz_python-0.2.7.tar.gz).
 
 ## Status
 

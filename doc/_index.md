@@ -25,58 +25,34 @@ adesso legga **1 → 2 → 3**.
 | 5 | [piano di implementazione fase 2.md](<piano di implementazione fase 2.md>) | il seguito, **da decidere**: smettere di avere una immagine sola. Cambia `FORMATO` e vuole sei misure nuove prima di scrivere codice |
 | — | [_history.md](_history.md) | quattro righe di storia: dedup → solo zip → npz → versione go |
 
-Le misure vere stanno in [report-fase0.md](../npz_python/test/report-fase0.md), che è
-output di banco e non prosa.
+Le misure vere stanno in [report-fase0.md](../archive/npz_python-0.2.7.tar.gz) — dentro
+l'archivio — che è output di banco e non prosa: chi vuole la storia dell'implementazione
+Python la trova in [archive/npz_python-0.2.7.tar.gz](../archive/npz_python-0.2.7.tar.gz).
 
 ---
 
 ## Il codice
 
-`npz_python/` è la **facciata** — sa di `package.json`, di npm e di `.npz` —
-appoggiata su `npz_python/lib/`, il **nucleo**, che sa costruire, montare e tenere lo
-stato ma non sa dove. È la separazione fra meccanismo e politica, ed è dove stanno le
-invarianti ([§4 del piano](<piano di implementazione.md>)).
+L'implementazione di oggi è **una sola**: `npz_go/`. La separazione che la governa —
+**meccanismo** contro **politica** — è quella esposta dal [piano](<piano di implementazione.md>):
+`internal/nucleo/` sa costruire, montare e tenere lo stato ma non sa dove; `internal/facciata/`
+sa di `package.json`, di npm e di `.npz`, ed è dove stanno le invarianti ([§4 del
+piano](<piano di implementazione.md>)).
 
-### La facciata — [npz_python/](../npz_python/)
-
-| Modulo | Ruolo |
-| --- | --- |
-| [lanciatore.py](../npz_python/lanciatore.py) | l'eseguibile, `python3 -SE`. Il caso normale sono tre `os.stat` e poi `execv` su npm: il processo **sparisce**, e TTY, segnali e codice di uscita passano senza una riga che se ne occupi |
-| [veloce.py](../npz_python/veloce.py) | il percorso veloce. Solo `os` e `sys`: misurato **13 ms** contro i 121 di `npm run`; la stessa passata con `pathlib` ne costa 39 |
-| [comandi.py](../npz_python/comandi.py) | che cosa fa un comando npm, e quale è invece nostro. Si sbaglia **per eccesso**: quel che non conosce è MUTANTE |
-| [progetto.py](../npz_python/progetto.py) | la radice non si dichiara: è il progetto stesso, riconosciuto dal `package.json` |
-| [cli.py](../npz_python/cli.py) | il percorso lento — montaggio, congelamento, scavalcamento, consolidamento. Qui i millisecondi non contano più, le invarianti sì |
-| [`__init__.py`](../npz_python/__init__.py) | il `Profilo` di `npz`: `SERVIZIO = ".npz"`, la sentinella, e `IMPLEMENTAZIONE`, che l'aiuto stampa per dire quale dei due gemelli risponde |
-
-**Come si esegue.** `lanciatore.py` è già l'eseguibile, quindi basta un symlink, e si
-chiama **`pnpz`** per non scontrarsi col binario Go installato come `npz`:
-
-```bash
-ln -sfn "$PWD/npz_python/lanciatore.py" ~/.local/bin/pnpz
-```
-
-I due convivono di proposito: `npz` è quel che si spedisce, `pnpz` quel che si sta
-scrivendo, e averli entrambi in PATH è ciò che rende l'oracolo differenziale una cosa
-che si lancia invece che una cerimonia.
-
-### Il nucleo — [npz_python/lib/](../npz_python/lib/)
-
-Ereditato **invariato** dal nucleo di `freeze`.
-
-| Modulo | Ruolo |
-| --- | --- |
-| [immagine.py](../npz_python/lib/immagine.py) | `percorsi()`, `costruisci()`, `verifica()`, `inventario()`, `differenze()`. `mkfs.erofs` senza opzioni oltre alla compressione: mode, mtime, uid, gid, xattr, symlink e hardlink si conservano |
-| [mount.py](../npz_python/lib/mount.py) | due implementazioni dietro la stessa interfaccia. **FUSE è quella normale** e non serve alcun privilegio; il kernel è l'ottimizzazione per quando root c'è |
-| [stato.py](../npz_python/lib/stato.py) | lock, config, meta. Il `.meta` accanto all'immagine è la fonte di verità |
-| [perimetro.py](../npz_python/lib/perimetro.py) | cosa si può congelare. Corto, perché EROFS regge quasi tutto |
-| [filesystem.py](../npz_python/lib/filesystem.py) | `sonda()` — non si fida del tipo dichiarato, prova, e restituisce **fatti**. `idoneita()` è la prima politica costruita sopra |
-| [`__init__.py`](../npz_python/lib/__init__.py) | `FORMATO`, `COMPRESSIONE`, `Errore`, il `Profilo`, e `VERSIONE` letta da [progetto.conf](../progetto.conf) — è il nucleo che scrive il `creata_da` di uno store, quindi è il nucleo che non deve poter mentire sul numero |
+La **precedente implementazione Python** — la facciata (`cli.py`, `lanciatore.py`,
+`veloce.py`, `comandi.py`, `progetto.py`) appoggiata sul nucleo `lib/` — è stata
+archiviata alla versione **0.2.7** in
+[archive/npz_python-0.2.7.tar.gz](../archive/npz_python-0.2.7.tar.gz), in linea con la
+fase 3 del [piano Go](<piano di implementazione go.md>), e può essere riesumata da lì
+se mai servirà.
 
 ### Il porting — [npz_go/](../npz_go/)
 
 Segue il [piano Go](<piano di implementazione go.md>), **a formato fermo**: `FORMATO`
-resta 1, e finché il Python è ancora qui le due implementazioni si verificano a
-vicenda.
+resta 1. L'oracolo differenziale — le due implementazioni che si verificavano a
+vicenda — ha fatto il suo corso, ed è **spento** dal taglio del Python: la storia di
+quel confronto (inclusa la divergenza di `inventario` qui sotto) è documentata nei
+`report-*-go.md` e resta leggibile nell'archivio.
 
 > **Regola permanente sul disallineamento.** Due implementazioni che si verificano a
 > vicenda valgono finché coprono la stessa superficie: una funzione che esiste da una
@@ -119,11 +95,10 @@ L'attraversata risparmiata è quella sul disco lento. La sola conseguenza di sos
 l'immagine viene confrontata con quel che c'era quando si è deciso di congelare — la
 domanda più sensata delle due.
 
-| banco | esito |
-| --- | --- |
-| [banco-fase0.sh](../npz_go/test/banco-fase0.sh) — il pavimento | **30 pass, 0 fail** · percorso veloce **2,72 ms** contro 14,45 |
-| [banco-fase1.sh](../npz_go/test/banco-fase1.sh) — l'oracolo differenziale | **47 pass, 0 fail** |
-| [banco-fase2.sh](../npz_go/test/banco-fase2.sh) — i giri completi incrociati | **44 pass, 0 fail** |
+I tre banchi hanno fatto il loro corso durante il porting: **30 + 47 + 44 pass,
+0 fail**. Oggi che il Python è archiviato, l'oracolo differenziale è spento e restano
+i banchi del prodotto — [banco-fase0.sh](../npz_go/test/banco-fase0.sh), il pavimento,
+e [banco-fase2.sh](../npz_go/test/banco-fase2.sh), i giri completi della facciata.
 
 ### Come si costruisce e si spedisce
 
@@ -225,7 +200,8 @@ module 'react'`, che è molto peggio da diagnosticare.
 
 `.npz/` vive accanto al progetto, quindi delta e immagine condividono il supporto, ed è
 `filesystem.idoneita()` a dire se quel supporto regge. Chiede tre cose, tutte misurate
-in [report-sonda.md](../npz_python/test/report-sonda.md): che si possa **scrivere**;
+in `report-sonda.md` (dentro [archive/npz_python-0.2.7.tar.gz](../archive/npz_python-0.2.7.tar.gz)):
+che si possa **scrivere**;
 che i file siano **nostri**, perché un disco montato con `uid=0` accetta la `chmod`
 degli shim e non fa niente, così sembra a posto, mentre attraverso l'overlay la stessa
 chiamata viene **rifiutata** e `npm install` muore con `EPERM`; e che il **bit `x`** si
@@ -254,7 +230,7 @@ rete che il bit di esecuzione non lo regge. Serve inoltre `user_allow_other` in
 | --- | --- |
 | **fase 0** — il banco | **chiusa**. Criterio di uscita superato; gli esiti nel [§12 bis](<piano di implementazione.md>) |
 | **fase 1** — la CLI | i sei comandi, il percorso veloce, il consolidamento e il lanciatore sono scritti. Resta l'unità utente `npz-smonta.service` |
-| **il porting in Go** | fasi 0, 1 e 2 **chiuse** (30 + 47 + 44 pass). Restano la settimana d'uso e il taglio del Python |
+| **il porting in Go** | **chiuso**. Fasi 0, 1 e 2 superate (30 + 47 + 44 pass); il Python archiviato alla 0.2.7 |
 | **fase 2** — una immagine per strato | **da decidere, non da scrivere**: nessun codice di prodotto prima delle misure nuove |
 
 I tredici secondi del consolidamento (N4) sono il numero che regge tutta la fase 2: è

@@ -117,8 +117,14 @@ con decine di MB fermi per tutta la durata di un `npm run dev`.
 
 ## 4. Architettura: il nucleo e la facciata
 
-Il nucleo è [`npz_python/lib/`](../npz_python/lib/), la facciata è `npz_python/`
-stesso. La separazione è quella fra **meccanismo** e **politica** — `lib` sa
+> **Nota del 14-08-2026.** L'implementazione Python descritta in questo documento è
+> stata **archiviata alla versione 0.2.7** e non vive più nel repo: la si riesuma da
+> [archive/npz_python-0.2.7.tar.gz](../archive/npz_python-0.2.7.tar.gz). Il testo
+> resta — è il progetto di `npz` — ma chi arriva oggi legga il codice in `npz_go/`.
+
+Il nucleo è [`lib/`](../archive/npz_python-0.2.7.tar.gz), la facciata è
+`npz_python/` — entrambi nell'archivio della 0.2.7. La separazione è quella fra
+**meccanismo** e **politica** — `lib` sa
 costruire, montare e tenere lo stato; sa *dove* farlo solo chi lo chiama. Tutti i
 moduli del nucleo sono ereditati **invariati** da `freeze`: `immagine.py`, `mount.py`,
 `stato.py`, `perimetro.py`, `filesystem.py`. Quel che non si è ereditato era politica
@@ -575,8 +581,9 @@ risponde EBUSY: era una promessa che il codice non manteneva. Quale serva lo dic
 
 `npz` ha due domande che possono ucciderlo, e costano giorni misurarle contro settimane
 implementarle. **Nessun codice di prodotto prima di questi otto numeri.** Il banco è
-[fase0.sh](../npz_python/test/fase0.sh), gli esiti in
-[report-fase0.md](../npz_python/test/report-fase0.md). Non serve root.
+[fase0.sh](../archive/npz_python-0.2.7.tar.gz), gli esiti in
+[report-fase0.md](../archive/npz_python-0.2.7.tar.gz) — entrambi nell'archivio della
+0.2.7. Non serve root.
 
 | | Scenario | Perché può cambiare il disegno |
 | --- | --- | --- |

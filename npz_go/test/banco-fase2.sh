@@ -12,9 +12,6 @@
 #   3. npz in CI: niente TTY, stdin chiuso, nessuna domanda, codice di npm
 #   4. npz dentro uno script di package.json: gli script chiamano npm, non npz
 #
-# E in piu' l'oracolo del §7, che alla fase 2 e' ancora acceso: attacca con una
-# implementazione, opera con l'altra.
-#
 set -uo pipefail
 
 QUI="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -37,10 +34,8 @@ fail()  { FAIL=$((FAIL+1)); ESITI+=("FAIL|$1|${2:-}"); printf '  [%s] %s %s\n' "
 confronta() { [ "$2" = "$3" ] && pass "$1" || fail "$1" "atteso='$(printf %s "$2"|head -c 70)' ottenuto='$(printf %s "$3"|head -c 70)'"; }
 
 GO="$BANCO/npz"
-PY="$BANCO/npz_python/lanciatore.py"
 NUCLEO="$BANCO/nucleo"
 
-py()  { python3 -SE "$PY" "$@"; }
 inv() { "$NUCLEO" inventario "$1"; }
 
 # Si insiste, invece di provarci una volta sola. Staccare l'overlay e subito
@@ -74,10 +69,6 @@ prepara() {
         fail "npz e il driver compilano"; return 1
     fi
     pass "npz e il driver compilano" "$(numfmt --to=iec-i --suffix=B "$(stat -c%s "$GO")")"
-
-    cp -r "$RADICE/npz_python" "$BANCO/npz_python"
-    find "$BANCO/npz_python" -name '__pycache__' -type d -exec rm -rf {} + 2>/dev/null
-    pass "npz_python in posizione" "l'oracolo della fase 1, ancora acceso"
 
     # npm finto: si misura npz, non npm. Chi vuole npm vero lo dice a mano.
     ln -sf /bin/true "$BANCO/finto/npm"
@@ -259,74 +250,29 @@ dentro_script() {
     info "albero montato ${espanso}K contro ${compresso}K di immagine su disco"
 }
 
-# ── 5. l'oracolo: Go e Python si scambiano il progetto ───────────────────────
-
-incrocio() {
-    sez "5. l'oracolo — attacca con una, opera con l'altra"
-
-    # a) Python attacca, Go opera
-    local p="$BANCO/py2go"; mkdir -p "$p"; semina "$p"
-    if ! ( cd "$p" && py attach ) >/dev/null 2>&1; then
-        fail "il Python attacca"; return 1
-    fi
-    pass "il Python attacca"
-    local atteso; atteso=$(inv "$p/node_modules")
-
-    local stato; stato=$( cd "$p" && "$GO" status 2>&1 | grep -oP 'status\s+\K\w+' )
-    [ "$stato" = mounted ] && pass "Go legge lo stato scritto dal Python" \
-        || fail "Go legge lo stato scritto dal Python" "'$stato'"
-
-    ( cd "$p" && "$GO" bye ) >/dev/null 2>&1
-    ( cd "$p" && "$GO" hey ) >/dev/null 2>&1
-    confronta "Go smonta e rimonta l'immagine del Python" "$atteso" "$(inv "$p/node_modules")"
-
-    ( cd "$p" && "$GO" compact ) >/dev/null 2>&1
-    confronta "Go consolida l'immagine del Python" "$atteso" "$(inv "$p/node_modules")"
-
-    ( cd "$p" && "$GO" detach ) >/dev/null 2>&1
-    confronta "Go stacca il progetto del Python" "$atteso" "$(inv "$p/node_modules")"
-
-    # b) Go attacca, il Python opera
-    local q="$BANCO/go2py"; mkdir -p "$q"; semina "$q"
-    ( cd "$q" && "$GO" attach ) >/dev/null 2>&1 || { fail "Go attacca"; return 1; }
-    pass "Go attacca"
-    atteso=$(inv "$q/node_modules")
-
-    stato=$( cd "$q" && py status 2>&1 | grep -oP 'status\s+\K\w+' )
-    [ "$stato" = mounted ] && pass "il Python legge lo stato scritto da Go" \
-        || fail "il Python legge lo stato scritto da Go" "'$stato'"
-
-    ( cd "$q" && py bye ) >/dev/null 2>&1
-    ( cd "$q" && py hey ) >/dev/null 2>&1
-    confronta "il Python smonta e rimonta l'immagine di Go" "$atteso" "$(inv "$q/node_modules")"
-
-    ( cd "$q" && py compact ) >/dev/null 2>&1
-    confronta "il Python consolida l'immagine di Go" "$atteso" "$(inv "$q/node_modules")"
-
-    ( cd "$q" && py detach ) >/dev/null 2>&1
-    confronta "il Python stacca il progetto di Go" "$atteso" "$(inv "$q/node_modules")"
-}
-
-# ── 6. gli stati, e lo scavalcamento ─────────────────────────────────────────
+# ── 5. gli stati, e lo scavalcamento ─────────────────────────────────────────
 
 stati_e_scavalco() {
-    sez "6. stati e scavalcamento"
+    sez "5. stati e scavalcamento"
     local p="$BANCO/stati"; mkdir -p "$p"; semina "$p"
 
-    stato_go() { ( cd "$1" && "$GO" status 2>&1 | grep -oP 'status\s+\K\w+' ); }
-    stato_py() { ( cd "$1" && py status 2>&1 | grep -oP 'status\s+\K\w+' ); }
+    stato() { ( cd "$1" && "$GO" status 2>&1 | grep -oP 'status\s+\K\w+' ); }
 
-    confronta "stato candidate: Go ≡ Python" "$(stato_py "$p")" "$(stato_go "$p")"
+    [ "$(stato "$p")" = candidate ] && pass "stato: candidate" \
+        || fail "stato: candidate" "$(stato "$p")"
     ( cd "$p" && "$GO" attach ) >/dev/null 2>&1
-    confronta "stato mounted: Go ≡ Python" "$(stato_py "$p")" "$(stato_go "$p")"
+    [ "$(stato "$p")" = mounted ] && pass "stato: mounted" \
+        || fail "stato: mounted" "$(stato "$p")"
     ( cd "$p" && "$GO" bye ) >/dev/null 2>&1
-    confronta "stato attached: Go ≡ Python" "$(stato_py "$p")" "$(stato_go "$p")"
+    [ "$(stato "$p")" = attached ] && pass "stato: attached" \
+        || fail "stato: attached" "$(stato "$p")"
 
     # Lo scavalcamento: qualcuno batte npm da fermo e ricostruisce l'albero.
     mkdir -p "$p/node_modules/intruso"; echo 'x' > "$p/node_modules/intruso/i.js"
-    confronta "stato bypassed: Go ≡ Python" "$(stato_py "$p")" "$(stato_go "$p")"
-    [ "$(stato_go "$p")" = bypassed ] && pass "lo scavalcamento si riconosce" \
-        || fail "lo scavalcamento si riconosce" "$(stato_go "$p")"
+    [ "$(stato "$p")" = bypassed ] && pass "stato: bypassed" \
+        || fail "stato: bypassed" "$(stato "$p")"
+    [ "$(stato "$p")" = bypassed ] && pass "lo scavalcamento si riconosce" \
+        || fail "lo scavalcamento si riconosce" "$(stato "$p")"
 
     # Senza TTY npz non sceglie da solo: avvisa e lascia passare il comando.
     local esito
@@ -339,20 +285,19 @@ stati_e_scavalco() {
     rm -rf "$p/node_modules"
     ( cd "$p" && "$GO" hey ) >/dev/null 2>&1
     smonta_tutto
-    confronta "stato broken: Go ≡ Python" "$(stato_py "$p")" "$(stato_go "$p")"
-    [ "$(stato_go "$p")" = broken ] && pass "il mount caduto si riconosce" \
-        || fail "il mount caduto si riconosce" "$(stato_go "$p")"
+    [ "$(stato "$p")" = broken ] && pass "il mount caduto si riconosce" \
+        || fail "il mount caduto si riconosce" "$(stato "$p")"
 
     # …e si ripara in silenzio al primo comando.
     CI=1 sh -c "cd '$p' && '$GO' ls" </dev/null >/dev/null 2>&1
-    [ "$(stato_go "$p")" = mounted ] && pass "e si ripara da solo" \
-        || fail "e si ripara da solo" "$(stato_go "$p")"
+    [ "$(stato "$p")" = mounted ] && pass "e si ripara da solo" \
+        || fail "e si ripara da solo" "$(stato "$p")"
 }
 
-# ── 7. npm ci — il caso patologico ───────────────────────────────────────────
+# ── 6. npm ci — il caso patologico ───────────────────────────────────────────
 
 caso_ci() {
-    sez "7. npm ci — il caso patologico del §8"
+    sez "6. npm ci — il caso patologico del §8"
     local p="$BANCO/npmci"; mkdir -p "$p"; semina "$p"
     ( cd "$p" && "$GO" attach ) >/dev/null 2>&1
     local atteso; atteso=$(inv "$p/node_modules")
@@ -428,12 +373,11 @@ report() {
         echo "# Fase 2 del porting in Go — la facciata"
         echo
         echo "- data: $(date '+%Y-%m-%d %H:%M:%S')"
-        echo "- go: \`$(go version | awk '{print $3}')\` · python: \`$(python3 --version | awk '{print $2}')\`"
+        echo "- go: \`$(go version | awk '{print $3}')\`"
         echo "- banco: \`$BANCO\`"
         echo
         echo "Sono i quattro test del §13 del piano — mai scritti in Python, e il"
-        echo "porting e' l'occasione di scriverli una volta sola — piu' l'oracolo"
-        echo "del §7, che alla fase 2 e' ancora acceso."
+        echo "porting e' l'occasione di scriverli una volta sola."
         echo
         echo "## Esiti"
         echo
@@ -447,13 +391,11 @@ report() {
         echo
         if [ "$FAIL" -eq 0 ]; then
             echo "La facciata Go regge il giro completo, converge dopo un'uccisione, tace"
-            echo "in CI, non si fa notare dagli script di package.json, e si scambia i"
-            echo "progetti col Python in tutte e due le direzioni."
+            echo "in CI, non si fa notare dagli script di package.json."
             echo
-            echo "La fase 3 — una settimana d'uso, poi il taglio — puo' cominciare."
+            echo "Il taglio del Python (fase 3) puo' cominciare."
         else
-            echo "**$FAIL divergenze.** Vanno chiuse prima della fase 3: e' adesso che"
-            echo "l'oracolo esiste, e dopo il taglio non ci sara' piu'."
+            echo "**$FAIL verifiche fallite.** Vanno chiuse prima del taglio."
         fi
     } > "$f"
     sez "report"; info "scritto in $f"
@@ -467,7 +409,6 @@ main() {
     convergenza
     in_ci
     dentro_script
-    incrocio
     stati_e_scavalco
     caso_ci
     report

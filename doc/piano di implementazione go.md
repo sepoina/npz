@@ -1,5 +1,10 @@
 # npz — piano di implementazione, il porting in Go
 
+> **Nota del 14-08-2026.** Il §11 descrive come futuro il taglio del Python; **ora è
+> avvenuto**. `npz_python/` non vive più nel repo: la versione 0.2.7 è archiviata in
+> [archive/npz_python-0.2.7.tar.gz](../archive/npz_python-0.2.7.tar.gz), e l'oracolo
+> differenziale di cui parla il §7 è spento. Il testo resta — è la storia del porting.
+
 Il §3 del [piano](<piano di implementazione.md>) aveva condizionato il binario
 compilato a N6. **N6 è passato a 11,8%**: sull'asse della velocità il wrapper in
 Python regge, e non c'è niente da comprare. Questo porting nasce quindi da un movente
@@ -290,5 +295,5 @@ insieme a un cambio di formato no.
   si fa insieme a questo, e perché.
 - [claim.md](claim.md) — le tre invarianti. Nessuna si muove qui: cambiano le righe che
   le implementano, non quelle che le descrivono.
-- [report-fase0.md](../npz_python/test/report-fase0.md) — N6, il numero che dice che
-  questo porting **non** serviva alla velocità.
+- [report-fase0.md](../archive/npz_python-0.2.7.tar.gz) — N6, il numero che dice che
+  questo porting **non** serviva alla velocità (nell'archivio Python).

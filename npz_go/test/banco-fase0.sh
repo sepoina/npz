@@ -9,8 +9,6 @@
 # Il banco vive in /var/tmp (ext4) e NON nella cartella del progetto, che sta su
 # NTFS via ntfs-3g: far partire un binario da un filesystem FUSE aggiungerebbe
 # il demone alla misura dell'avvio, che e' esattamente cio' che si sta misurando.
-# Per la stessa ragione ci si copia anche il Python, altrimenti il confronto
-# sarebbe fra un binario su ext4 e uno script su FUSE.
 #
 # Uso:
 #   ./banco.sh            tutto
@@ -47,7 +45,7 @@ misura() { MISURE+=("$1|$2"); printf '  %-46s %s\n' "$1" "$2"; }
 preflight() {
     sez "preflight"
     local mancanti=0
-    for t in go python3 npm mkfs.erofs erofsfuse fusermount3 bc numfmt; do
+    for t in go npm mkfs.erofs erofsfuse fusermount3 bc numfmt; do
         if command -v "$t" >/dev/null 2>&1; then
             pass "$t presente"
         else
@@ -91,21 +89,6 @@ costruisci() {
         fail "il binario e' statico: nessuna dipendenza da glibc" "$(file "$BANCO/npz-go" | cut -d: -f2- | cut -c1-60)"
     fi
 
-    # Il Python, copiato su ext4 perche' il confronto sia fra pari.
-    cp -r "$RADICE/npz_python" "$BANCO/npz_python"
-    find "$BANCO/npz_python" -name '__pycache__' -type d -exec rm -rf {} + 2>/dev/null
-    pass "npz_python copiato sul banco" "confronto fra pari"
-
-    # La simulazione di N6: tre stat e un execvp, cioe' esattamente il codice su
-    # cui e' stato misurato il 12,4 ms a report. Serve a riprodurre la linea di
-    # base su questa macchina oggi, prima di confrontarci qualcosa.
-    cat > "$BANCO/veloce-n6.py" <<'PY'
-import os, sys
-for f in (".npz/static/node_modules.img", "node_modules", "package.json"):
-    try: os.stat(f)
-    except OSError: pass
-os.execvp("true", ["true"] + sys.argv[1:])
-PY
 }
 
 # ── la fixture: un progetto davvero montato ──────────────────────────────────
@@ -212,20 +195,6 @@ stati() {
     # scavalcato: un albero vero al posto del mount
     touch "$q/node_modules/qualcosa.js"
     s=$(stato_in "$q"); [ "$s" = bypassed ] && pass "stato: bypassed" || fail "stato: bypassed" "ha detto '$s'"
-
-    # E il Python deve dire le stesse cose: e' l'oracolo del §7, in piccolo.
-    local divergenze=0
-    for d in "$p" "$BANCO/fuori" "$q"; do
-        local sg sp
-        sg=$(stato_in "$d")
-        sp=$( cd "$d" && python3 -c "
-import sys; sys.path.insert(0, '$BANCO')
-from npz_python import veloce
-print(veloce.stato(veloce.trova_progetto()))" 2>/dev/null )
-        [ "$sg" = "$sp" ] || { divergenze=$((divergenze+1)); info "divergenza in $d: go='$sg' python='$sp'"; }
-    done
-    [ "$divergenze" -eq 0 ] && pass "Go e Python concordano sullo stato" \
-        || fail "Go e Python concordano sullo stato" "$divergenze divergenze"
 }
 
 # ── la trasparenza di Exec ───────────────────────────────────────────────────
@@ -331,20 +300,13 @@ misure() {
     local suolo; suolo=$( cd "$p" && cronometra_m "$RIP_V" "$GIRI_V" /bin/true )
     misura "pavimento (/bin/true nudo)" "${suolo} ms"
 
-    # I tre numeratori, tutti con npm finto: si misura il wrapper, non npm.
-    local n6 py go
-    n6=$( cd "$p" && PATH="$BANCO/finto:$PATH" cronometra_m "$RIP_V" "$GIRI_V" python3 -SE "$BANCO/veloce-n6.py" )
-    py=$( cd "$p" && PATH="$BANCO/finto:$PATH" cronometra_m "$RIP_V" "$GIRI_V" python3 -SE "$BANCO/npz_python/lanciatore.py" ls )
+    # Il numeratore, con npm finto: si misura il wrapper, non npm.
+    local go
     go=$( cd "$p" && PATH="$BANCO/finto:$PATH" cronometra_m "$RIP_V" "$GIRI_V" "$BANCO/npz-go" ls )
 
-    misura "simulazione N6 (Python, 3 stat + execvp)" "${n6} ms"
-    misura "lanciatore.py reale (Python)" "${py} ms"
     misura "spike Go" "${go} ms"
-    misura "costo proprio di npz: Python" "$(echo "scale=2; $py-$suolo" | bc -l) ms"
     misura "costo proprio di npz: Go" "$(echo "scale=2; $go-$suolo" | bc -l) ms"
-    misura "sovraccarico Python su npm" "$(echo "scale=1; 100*$py/$npm_vero" | bc -l)%"
     misura "sovraccarico Go su npm" "$(echo "scale=1; 100*$go/$npm_vero" | bc -l)%"
-    misura "Go contro lanciatore.py" "$(echo "scale=1; $py/$go" | bc -l)× piu' veloce"
 
     if (( $(echo "$go < 3" | bc -l) )); then
         pass "il percorso veloce sta sotto i 3 ms" "${go} ms"
@@ -375,7 +337,7 @@ report() {
         echo
         echo "- data: $(date '+%Y-%m-%d %H:%M:%S')"
         echo "- kernel: \`$(uname -r)\`"
-        echo "- go: \`$(go version | awk '{print $3}')\` · npm: \`$(npm --version)\` · python: \`$(python3 --version | awk '{print $2}')\`"
+        echo "- go: \`$(go version | awk '{print $3}')\` · npm: \`$(npm --version)\`"
         echo "- banco: \`$BANCO\` ($(df -T "$BANCO" | awk 'NR==2{print $2}'))"
         echo
         echo "## Esiti"

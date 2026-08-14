@@ -3,7 +3,8 @@
 Le decisioni della fase 1 e i numeri che le hanno prodotte. Quasi ogni voce è
 un'idea ragionevole smontata da una misura. Il disegno che ne è uscito è in
 [claim.md](claim.md); le misure di `npz` stanno in
-[report-fase0.md](../npz_python/test/report-fase0.md). Le voci **5**, **6** e **7**
+[report-fase0.md](../archive/npz_python-0.2.7.tar.gz) (nell'archivio del Python). Le
+voci **5**, **6** e **7**
 sono quelle che il [piano fase 2](<piano di implementazione fase 2.md>) rimette in
 discussione.
 
